@@ -438,6 +438,8 @@ get_image(
             obj_image->vdp_format,
             src, src_stride
         );
+/* FIXME:  WORKAROUND for returning of wrong status code */
+        vdp_status = (vdp_status == VDP_STATUS_ERROR) ? VDP_STATUS_OK : vdp_status;
         break;
     }
     case VDP_IMAGE_FORMAT_TYPE_RGBA: {
