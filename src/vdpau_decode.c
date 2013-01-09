@@ -1284,15 +1284,18 @@ vdpau_EndPicture(
         obj_context,
         get_num_ref_frames(obj_context)
     );
-    if (vdp_status == VDP_STATUS_OK)
+    if (vdp_status == VDP_STATUS_OK) {
+        void *test = &obj_context->vdp_picture_info;
+        VdpPictureInfo *info = (VdpPictureInfo*) test;
         vdp_status = vdpau_decoder_render(
             driver_data,
             obj_context->vdp_decoder,
             obj_surface->vdp_surface,
-            (VdpPictureInfo)&obj_context->vdp_picture_info,
+            info,
             obj_context->vdp_bitstream_buffers_count,
             obj_context->vdp_bitstream_buffers
         );
+	}
     va_status = vdpau_get_VAStatus(vdp_status);
 
     /* XXX: assume we are done with rendering right away */
