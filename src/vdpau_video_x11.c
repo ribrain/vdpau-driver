@@ -227,6 +227,17 @@ output_surface_create(
             output_surface_destroy(driver_data, obj_output);
             return NULL;
         }
+
+        /* {0, 0, 0, 0} make transparent */
+        VdpColor vdp_bg = {0.01, 0.02, 0.03, 0};
+        vdp_status = vdpau_presentation_queue_set_background_color(
+                    driver_data,
+                    obj_output->vdp_flip_queue,
+                    &vdp_bg
+        );
+        if (!VDPAU_CHECK_STATUS(vdp_status, "obj_output->vdp_flip_queue()")) {
+            /* NOTE: this is not a fatal error, so continue anyway */
+        }
     }
     return obj_output;
 }
