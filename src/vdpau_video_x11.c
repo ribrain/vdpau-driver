@@ -96,12 +96,14 @@ configure_notify_event_pending(
 static inline void
 output_surface_lock(object_output_p obj_output)
 {
+    pthread_mutex_lock(&obj_output->vdp_output_surfaces_lock);
 }
 
 // Unlocks output surfaces
 static inline void
 output_surface_unlock(object_output_p obj_output)
 {
+    pthread_mutex_unlock(&obj_output->vdp_output_surfaces_lock);
 }
 
 // Ensure output surface size matches drawable size
@@ -278,7 +280,6 @@ output_surface_destroy(
         }
     }
 
-    pthread_mutex_unlock(&obj_output->vdp_output_surfaces_lock);
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
 }
