@@ -45,6 +45,52 @@ video_mixer_init_deint_surfaces(object_mixer_p obj_mixer)
         obj_mixer->deint_surfaces[i] = VDP_INVALID_HANDLE;
 }
 
+static VdpStatus
+video_mixer_update_deint(vdpau_driver_data_t *driver_data, object_mixer_p obj_mixer, unsigned int type)
+{
+    /* deinterlace 'type' is defined as follows:
+     *  0: disable
+     *  1: VDP_VIDEO_MIXER_FEATURE_DEINTERLACE_TEMPORAL
+     *  2: VDP_VIDEO_MIXER_FEATURE_DEINTERLACE_TEMPORAL_SPATIAL
+     *  3: VDP_VIDEO_MIXER_FEATURE_INVERSE_TELECINE
+     */
+    if (obj_mixer->vdp_video_mixer == VDP_INVALID_HANDLE)
+        return VDP_STATUS_INVALID_HANDLE;
+
+    if (obj_mixer->deinterlace_type == type)
+        return VDP_STATUS_OK;
+
+    VdpVideoMixerFeature features[1];
+    switch (type) {
+        case 1: features[0] = VDP_VIDEO_MIXER_FEATURE_DEINTERLACE_TEMPORAL; break;
+        case 2: features[0] = VDP_VIDEO_MIXER_FEATURE_DEINTERLACE_TEMPORAL_SPATIAL; break;
+        case 3: features[0] = VDP_VIDEO_MIXER_FEATURE_INVERSE_TELECINE; break;
+        default:
+            /* disable current deinterlacing type */
+            switch (obj_mixer->deinterlace_type) {
+            case 1: features[0] = VDP_VIDEO_MIXER_FEATURE_DEINTERLACE_TEMPORAL; break;
+            case 2: features[0] = VDP_VIDEO_MIXER_FEATURE_DEINTERLACE_TEMPORAL_SPATIAL; break;
+            case 3: features[0] = VDP_VIDEO_MIXER_FEATURE_INVERSE_TELECINE; break;
+            default:
+                return VDP_STATUS_ERROR;
+            }
+            break;
+    }
+    VdpBool feature_enables[1] = { ((type > 0) && (type < 4)) ? VDP_TRUE : VDP_FALSE };
+    VdpStatus vdp_status;
+    vdp_status = vdpau_video_mixer_set_feature_enables(
+        driver_data,
+        obj_mixer->vdp_video_mixer,
+        1,
+        features,
+        feature_enables
+    );
+    if (!VDPAU_CHECK_STATUS(vdp_status, "VdpVideoMixerSetFeatureEnables()"))
+        return vdp_status;
+    obj_mixer->deinterlace_type = type;
+    return VDP_STATUS_OK;
+}
+
 /** Checks wether video mixer supports a specific feature */
 static inline VdpBool
 video_mixer_has_feature(
@@ -89,6 +135,7 @@ video_mixer_create(
     obj_mixer->vdp_bgcolor_mtime = 0;
     obj_mixer->hqscaling_level   = 0;
     obj_mixer->va_scale          = 0;
+    obj_mixer->deinterlace_type  = 1;
 
     VdpProcamp * const procamp   = &obj_mixer->vdp_procamp;
     procamp->struct_version      = VDP_PROCAMP_VERSION;
@@ -128,6 +175,12 @@ video_mixer_create(
         &obj_mixer->vdp_video_mixer
     );
     if (!VDPAU_CHECK_STATUS(vdp_status, "VdpVideoMixerCreate()")) {
+        video_mixer_destroy(driver_data, obj_mixer);
+        return NULL;
+    }
+
+    /* Enable deinterlacing modes */
+    if (video_mixer_update_deint(driver_data, obj_mixer, 1) != VDP_STATUS_OK) {
         video_mixer_destroy(driver_data, obj_mixer);
         return NULL;
     }
@@ -422,7 +475,10 @@ video_mixer_render(
         field = VDP_VIDEO_MIXER_PICTURE_STRUCTURE_FRAME;
         break;
     }
-    video_mixer_push_deint_surface(obj_mixer, obj_surface);
+
+    if ((obj_mixer->deinterlace_type < 1) ||
+        (obj_mixer->deint_surfaces[0] == VDP_INVALID_HANDLE))
+        video_mixer_push_deint_surface(obj_mixer, obj_surface);
 
     if (flags & VA_CLEAR_DRAWABLE)
         vdp_background = VDP_INVALID_HANDLE;

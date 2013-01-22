@@ -35,6 +35,7 @@ struct object_mixer {
     unsigned int                height;
     unsigned int                hqscaling_level;
     unsigned int                va_scale;
+    unsigned int                deinterlace_type;
     VdpColorStandard            vdp_colorspace;
     VdpProcamp                  vdp_procamp;
     uint64_t                    vdp_procamp_mtime;
