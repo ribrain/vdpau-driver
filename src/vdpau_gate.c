@@ -130,6 +130,8 @@ int vdpau_gate_init(vdpau_driver_data_t *driver_data)
                   get_information_string);
     VDP_INIT_PROC(GET_ERROR_STRING,
                   get_error_string);
+    VDP_INIT_PROC(PREEMPTION_CALLBACK_REGISTER,
+                  preemption_callback_register);
 
 #undef VDP_INIT_PROC
     return 0;
@@ -898,4 +900,17 @@ const char *
 vdpau_get_error_string(vdpau_driver_data_t *driver_data, VdpStatus vdp_status)
 {
     return VDPAU_INVOKE_(NULL, get_error_string, vdp_status);
+}
+
+// VdpPreemptionCallbackRegister
+VdpStatus
+vdpau_preemption_callback_register(vdpau_driver_data_t *driver_data,
+                                   VdpDevice device,
+                                   VdpPreemptionCallback callback,
+                                   void *context)
+{
+    return VDPAU_INVOKE(preemption_callback_register,
+                        device,
+                        callback,
+                        context);
 }

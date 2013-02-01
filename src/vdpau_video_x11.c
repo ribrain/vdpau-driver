@@ -29,6 +29,22 @@
 #define DEBUG 1
 #include "debug.h"
 
+// Handle VT display preemption
+static int handle_display_preemption(vdpau_driver_data_t *driver_data)
+{
+    if (!driver_data->is_preempted)
+        return 0;
+    driver_data->is_preempted = 0;
+    abort();
+
+    /* FIXME: cleanup current driver_data context and all
+     * associated memory (eg: vaTerminate()) followed by
+     * reinitialisation (eg: vaInitialize().
+     */
+
+    /* Return failure for now */
+    return -1;
+}
 
 // Checks whether drawable is a window
 static int is_window(Display *dpy, Drawable drawable)
@@ -74,6 +90,9 @@ configure_notify_event_pending(
 )
 {
     if (!obj_output->is_window)
+        return 0;
+
+    if (handle_display_preemption(driver_data) < 0)
         return 0;
 
     XEvent xev;
@@ -591,6 +610,9 @@ flip_surface_unlocked(
     object_output_p      obj_output
 )
 {
+    if (handle_display_preemption(driver_data) < 0)
+        return VA_STATUS_ERROR_OPERATION_FAILED;
+
     VdpStatus vdp_status;
     vdp_status = vdpau_presentation_queue_display(
         driver_data,

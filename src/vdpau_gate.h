@@ -75,6 +75,7 @@ struct vdpau_vtable {
     VdpGetApiVersion                    *vdp_get_api_version;
     VdpGetInformationString             *vdp_get_information_string;
     VdpGetErrorString                   *vdp_get_error_string;
+    VdpPreemptionCallbackRegister       *vdp_preemption_callback_register;
 };
 
 // Initialize VDPAU hooks
@@ -531,6 +532,15 @@ vdpau_output_surface_query_rgba_caps(
     VdpDevice            device,
     VdpRGBAFormat        surface_rgba_format,
     VdpBool             *is_supported
+) attribute_hidden;
+
+// VdpPreemptionCallbackRegister
+VdpStatus
+vdpau_preemption_callback_register(
+        vdpau_driver_data_p driver_data,
+        VdpDevice device,
+        VdpPreemptionCallback callback,
+        void *context
 ) attribute_hidden;
 
 #endif /* VDPAU_GATE_H */

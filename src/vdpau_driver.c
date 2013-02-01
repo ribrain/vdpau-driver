@@ -152,6 +152,14 @@ destroy_heap(
             return VA_STATUS_ERROR_UNKNOWN;     \
     } while (0)
 
+// vdpau_preemption_callback
+static void vdpau_preemption_callback(VdpDevice device, void *context)
+{
+    vdpau_driver_data_t *driver_data = (vdpau_driver_data_t *) context;
+    /* NOTE: detect preemption of displaying picture */
+    driver_data->is_preempted = 1;
+}
+
 // vaTerminate
 static void
 vdpau_common_Terminate(vdpau_driver_data_t *driver_data)
@@ -167,6 +175,15 @@ vdpau_common_Terminate(vdpau_driver_data_t *driver_data)
 #if USE_GLX
     DESTROY_HEAP(glx_surface, NULL);
 #endif
+
+    VdpStatus vdp_status;
+    vdp_status = vdpau_preemption_callback_register(driver_data,
+                                                    driver_data->vdp_device,
+                                                    NULL,
+                                                    NULL);
+    if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPreemptioCallbackRegister()")) {
+        /* NOTE: not a fatal error. */
+    }
 
     if (driver_data->vdp_device != VDP_INVALID_HANDLE) {
         vdpau_device_destroy(driver_data, driver_data->vdp_device);
@@ -235,6 +252,14 @@ vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
             if (sscanf(version_string, "%d.%d", &major, &minor) == 2)
                 driver_data->vdp_impl_version = (major << 16) | minor;
         }
+    }
+
+    vdp_status = vdpau_preemption_callback_register(driver_data,
+                                                    driver_data->vdp_device,
+                                                    vdpau_preemption_callback,
+                                                    driver_data);
+    if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPreemptioCallbackRegister()")) {
+        /* NOTE: not a fatal error. */
     }
 
     sprintf(driver_data->va_vendor, "%s %s - %d.%d.%d",
