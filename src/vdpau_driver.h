@@ -26,6 +26,8 @@
 #include "vdpau_gate.h"
 #include "object_heap.h"
 
+//for shared memory struct for alpha blending
+#include <xcb/xcb_image.h>
 
 #define VDPAU_DRIVER_DATA_INIT                           \
         struct vdpau_driver_data *driver_data =          \
@@ -101,6 +103,10 @@ struct vdpau_driver_data {
     unsigned int                va_display_attrs_count;
     char                        va_vendor[256];
     unsigned int                is_preempted;
+    int                         bahluxid;
+    xcb_connection_t           *xcb_conn;
+    xcb_shm_segment_info_t      shminfo;
+    VdpBitmapSurface            ui_surface;
 };
 
 typedef struct object_config   *object_config_p;

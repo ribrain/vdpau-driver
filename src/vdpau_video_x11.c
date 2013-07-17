@@ -26,6 +26,14 @@
 #include "utils.h"
 #include "utils_x11.h"
 
+#include <errno.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <xcb/shm.h>
+#include <xcb/xcb.h>
+#include <xcb/xcb_image.h>
+
 #define DEBUG 1
 #include "debug.h"
 
@@ -249,8 +257,51 @@ output_surface_create(
             return NULL;
         }
 
+        //setup shared memory access to the Bahlu window for alpha channel extraction
+        char *bahluxid_env = getenv("BAHLU_XID");
+        if (bahluxid_env) {
+            int bahluxid = atoi(bahluxid_env);
+            D(bug("BAHLU ALPHA: Setting up shared memory access with X server for window ID 0x%x\n", bahluxid));
+            xcb_connection_t *xcb_conn = xcb_connect(NULL, NULL);
+            xcb_shm_segment_info_t shminfo;
+            shminfo.shmid = shmget(IPC_PRIVATE, obj_output->width * obj_output->height * 4,
+                                   IPC_CREAT|0777);
+            if (shminfo.shmid == -1) {
+                fprintf(stderr, "shmget failed with errror: %s.\n", strerror(shminfo.shmid));
+            }
+            shminfo.shmaddr = shmat(shminfo.shmid, 0, 0);
+            if (shminfo.shmaddr == (void *)(-1)) {
+                fprintf(stderr, "shmat failed with error: %s.\n", strerror(errno));
+            }
+            shminfo.shmseg = xcb_generate_id(xcb_conn);
+            xcb_void_cookie_t ck = xcb_shm_attach_checked(xcb_conn, shminfo.shmseg,
+                                                          shminfo.shmid, 0);
+            shmctl(shminfo.shmid, IPC_RMID, 0);
+            xcb_generic_error_t *err = xcb_request_check(xcb_conn, ck);
+            if (err) {
+                fprintf(stderr, "xcb_shm_attach failed with error code = %d.\n", err->error_code);
+                shmdt(shminfo.shmaddr);
+            } else {
+                driver_data->bahluxid = bahluxid;
+                driver_data->xcb_conn = xcb_conn;
+                driver_data->shminfo = shminfo;
+            }
+            vdp_status = vdpau_bitmap_surface_create(
+                             driver_data,
+                             driver_data->vdp_device,
+                             VDP_RGBA_FORMAT_B8G8R8A8,
+                             obj_output->width,
+                             obj_output->height,
+                             VDP_TRUE, //frequently accessed
+                             &(driver_data->ui_surface));
+             if (vdp_status) {
+                 vdpau_error_message("failed to create image surface. Error: %s\n",
+                     vdpau_get_error_string(driver_data, vdp_status));
+             }
+        }
+
         /* {0, 0, 0, 0} make transparent */
-        VdpColor vdp_bg = {0.01, 0.02, 0.03, 0};
+        VdpColor vdp_bg = {0.00, 0.00, 0.00, 0};
         vdp_status = vdpau_presentation_queue_set_background_color(
                     driver_data,
                     obj_output->vdp_flip_queue,
@@ -298,6 +349,8 @@ output_surface_destroy(
             obj_output->vdp_output_surfaces[i] = VDP_INVALID_HANDLE;
         }
     }
+
+    vdpau_bitmap_surface_destroy(driver_data, driver_data->ui_surface);
 
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
@@ -624,6 +677,85 @@ flip_surface_unlocked(
     );
     if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueDisplay()"))
         return vdpau_get_VAStatus(vdp_status);
+
+    if (driver_data->bahluxid) {
+        xcb_shm_get_image_cookie_t image_cookie = xcb_shm_get_image(driver_data->xcb_conn,
+                                                            driver_data->bahluxid, 0, 0,
+                                                            obj_output->width,
+                                                            obj_output->height, ~0,
+                                                            XCB_IMAGE_FORMAT_Z_PIXMAP,
+                                                            driver_data->shminfo.shmseg, 0);
+        xcb_generic_error_t *err = NULL;
+        xcb_shm_get_image_reply_t *imrep = xcb_shm_get_image_reply(driver_data->xcb_conn,
+                                                                   image_cookie, &err);
+        if (err) {
+            fprintf(stderr, "Incorrect reply.\n");
+            fprintf(stderr, "ShmGetImageReply error = %d.\n", (int)err->error_code);
+            free(err);
+        } else {
+            free(imrep);
+        }
+        uint8_t *data = driver_data->shminfo.shmaddr;
+        uint32_t stride = obj_output->width;
+        uint32_t stride_array[3];
+        stride_array[0] = stride;
+        stride_array[1] = stride;
+        stride_array[2] = stride;
+
+        VdpRect destination_rect;
+        destination_rect.x0 = 0;
+        destination_rect.x1 = obj_output->width;
+        destination_rect.y0 = 0;
+        destination_rect.y1 = obj_output->height;
+        vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
+                                                          driver_data->ui_surface,
+                                                          (const uint8_t **)data,
+                                                          stride_array,
+                                                          &destination_rect
+                                                          );
+        if (vdp_status) {
+            vdpau_error_message("Failed to put image bits to image surface. Error: %s.\n",
+                                vdpau_get_error_string(driver_data, vdp_status));
+            //get supported formats
+            VdpBool b8g8r8a8_supported = 0;
+            uint32_t max_width, max_height;
+            vdp_status = vdpau_bitmap_surface_query_capabilities(
+                        driver_data,
+                        driver_data->vdp_device,
+                        VDP_RGBA_FORMAT_B8G8R8A8,
+                        &b8g8r8a8_supported,
+                        &max_width,
+                        &max_height);
+            vdpau_error_message("VDP_RGBA_FORMAT_B8G8R8A8 supported? %s. " \
+                                 "max size: %dx%d\tstatus: %s\n",
+                                        b8g8r8a8_supported ? "yes" : "no",
+                                        max_width, max_height,
+                                        vdpau_get_error_string(driver_data, vdp_status));
+            return VA_STATUS_ERROR_INVALID_IMAGE_FORMAT;
+        }
+
+        VdpOutputSurfaceRenderBlendState blend_state;
+        blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
+        blend_state.blend_factor_source_color      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
+        blend_state.blend_factor_source_alpha      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+        blend_state.blend_factor_destination_color = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
+        blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+        blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+        vdpau_output_surface_render_bitmap_surface(driver_data,
+                                                   obj_output->current_output_surface,
+                                                   &destination_rect,
+                                                   driver_data->ui_surface,
+                                                   &destination_rect,
+                                                   NULL,
+                                                   &blend_state,
+                                                   VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
+        if (vdp_status) {
+            vdpau_error_message("Failed to render bitmap on output. Error: %s\n",
+                                vdpau_get_error_string(driver_data, vdp_status));
+            return vdp_status;
+        }
+    }
 
     obj_output->displayed_output_surface = obj_output->current_output_surface;
     obj_output->current_output_surface   =
