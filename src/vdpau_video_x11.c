@@ -696,7 +696,12 @@ flip_surface_unlocked(
             free(imrep);
         }
         uint8_t *data = driver_data->shminfo.shmaddr;
-        uint32_t stride = obj_output->width;
+        uint8_t *source_data[3];
+        source_data[0] = data;
+        source_data[1] = data;
+        source_data[2] = data;
+
+        uint32_t stride = 0;
         uint32_t stride_array[3];
         stride_array[0] = stride;
         stride_array[1] = stride;
@@ -709,7 +714,7 @@ flip_surface_unlocked(
         destination_rect.y1 = obj_output->height;
         vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
                                                           driver_data->ui_surface,
-                                                          (const uint8_t **)data,
+                                                          (const uint8_t **)source_data,
                                                           stride_array,
                                                           &destination_rect
                                                           );
