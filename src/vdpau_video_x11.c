@@ -37,6 +37,8 @@
 #define DEBUG 1
 #include "debug.h"
 
+uint32_t bend_ui = 0;
+
 // Handle VT display preemption
 static int handle_display_preemption(vdpau_driver_data_t *driver_data)
 {
@@ -668,7 +670,7 @@ flip_surface_unlocked(
 
     VdpStatus vdp_status;
 
-    if (driver_data->bahluxid) {
+    if (driver_data->bahluxid && (bend_ui++%25 ==0)) {
         xcb_shm_get_image_cookie_t image_cookie = xcb_shm_get_image(driver_data->xcb_conn,
                                                             driver_data->bahluxid, 0, 0,
                                                             obj_output->width,
