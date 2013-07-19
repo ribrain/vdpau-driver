@@ -667,16 +667,6 @@ flip_surface_unlocked(
         return VA_STATUS_ERROR_OPERATION_FAILED;
 
     VdpStatus vdp_status;
-    vdp_status = vdpau_presentation_queue_display(
-        driver_data,
-        obj_output->vdp_flip_queue,
-        obj_output->vdp_output_surfaces[obj_output->current_output_surface],
-        obj_output->width,
-        obj_output->height,
-        0
-    );
-    if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueDisplay()"))
-        return vdpau_get_VAStatus(vdp_status);
 
     if (driver_data->bahluxid) {
         xcb_shm_get_image_cookie_t image_cookie = xcb_shm_get_image(driver_data->xcb_conn,
@@ -748,7 +738,7 @@ flip_surface_unlocked(
         blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
         blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
         vdpau_output_surface_render_bitmap_surface(driver_data,
-                                                   obj_output->current_output_surface,
+                                                   obj_output->vdp_output_surfaces[obj_output->current_output_surface],
                                                    &destination_rect,
                                                    driver_data->ui_surface,
                                                    &destination_rect,
@@ -761,6 +751,17 @@ flip_surface_unlocked(
             return vdp_status;
         }
     }
+
+    vdp_status = vdpau_presentation_queue_display(
+        driver_data,
+        obj_output->vdp_flip_queue,
+        obj_output->vdp_output_surfaces[obj_output->current_output_surface],
+        obj_output->width,
+        obj_output->height,
+        0
+    );
+    if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueDisplay()"))
+        return vdpau_get_VAStatus(vdp_status);
 
     obj_output->displayed_output_surface = obj_output->current_output_surface;
     obj_output->current_output_surface   =
