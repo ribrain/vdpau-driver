@@ -278,7 +278,6 @@ output_surface_create(
             shminfo.shmseg = xcb_generate_id(xcb_conn);
             xcb_void_cookie_t ck = xcb_shm_attach_checked(xcb_conn, shminfo.shmseg,
                                                           shminfo.shmid, 0);
-            shmctl(shminfo.shmid, IPC_RMID, 0);
             xcb_generic_error_t *err = xcb_request_check(xcb_conn, ck);
             if (err) {
                 fprintf(stderr, "xcb_shm_attach failed with error code = %d.\n", err->error_code);
@@ -353,6 +352,9 @@ output_surface_destroy(
     }
 
     vdpau_bitmap_surface_destroy(driver_data, driver_data->ui_surface);
+    xcb_shm_detach(driver_data->xcb_conn, driver_data->shminfo.shmseg);
+    shmdt(driver_data->shminfo.shmaddr);
+    shmctl(driver_data->shminfo.shmid, IPC_RMID, 0);
 
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
