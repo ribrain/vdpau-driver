@@ -265,26 +265,28 @@ output_surface_create(
         if (bahluxid_env) {
             int bahluxid = atoi(bahluxid_env);
 
+            vdpau_information_message("BAHLU ALPHA: redirection BAHLU_XID window.\n");
             xcb_connection_t *xcb_conn = xcb_connect(NULL, NULL);
             xcb_composite_redirect_window(xcb_conn, bahluxid, XCB_COMPOSITE_REDIRECT_AUTOMATIC);
 
-            D(bug("BAHLU ALPHA: Setting up shared memory access with X server for window ID 0x%x\n", bahluxid));
+            vdpau_information_message("BAHLU ALPHA: Setting up shared memory access with " \
+                                      "X server for window ID 0x%x\n", bahluxid);
             xcb_shm_segment_info_t shminfo;
             shminfo.shmid = shmget(IPC_PRIVATE, obj_output->width * obj_output->height * 4,
                                    IPC_CREAT|0777);
             if (shminfo.shmid == -1) {
-                fprintf(stderr, "shmget failed with errror: %s.\n", strerror(shminfo.shmid));
+                vdpau_error_message("shmget failed with errror: %s.\n", strerror(shminfo.shmid));
             }
             shminfo.shmaddr = shmat(shminfo.shmid, 0, 0);
             if (shminfo.shmaddr == (void *)(-1)) {
-                fprintf(stderr, "shmat failed with error: %s.\n", strerror(errno));
+                vdpau_error_message("shmat failed with error: %s.\n", strerror(errno));
             }
             shminfo.shmseg = xcb_generate_id(xcb_conn);
             xcb_void_cookie_t ck = xcb_shm_attach_checked(xcb_conn, shminfo.shmseg,
                                                           shminfo.shmid, 0);
             xcb_generic_error_t *err = xcb_request_check(xcb_conn, ck);
             if (err) {
-                fprintf(stderr, "xcb_shm_attach failed with error code = %d.\n", err->error_code);
+                vdpau_error_message("xcb_shm_attach failed with error code = %d.\n", err->error_code);
                 shmdt(shminfo.shmaddr);
             } else {
                 driver_data->bahluxid = bahluxid;
@@ -687,8 +689,7 @@ flip_surface_unlocked(
         xcb_shm_get_image_reply_t *imrep = xcb_shm_get_image_reply(driver_data->xcb_conn,
                                                                    image_cookie, &err);
         if (err) {
-            fprintf(stderr, "Incorrect reply.\n");
-            fprintf(stderr, "ShmGetImageReply error = %d.\n", (int)err->error_code);
+            vdpau_error_message("xcb_shm_get_image error = %d.\n", (int)err->error_code);
             free(err);
         } else {
             free(imrep);
