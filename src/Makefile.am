@@ -7,7 +7,7 @@ INCLUDES = \
 LDADD = \
 	$(VDPAU_VIDEO_LT_LDFLAGS) -module \
 	-no-undefined -module -Wl,--no-undefined \
-	-lxcb-image -lxcb-shm -lxcb
+        -lxcb-image -lxcb-shm -lxcb -lxcb-composite -lxcb-xfixes -lxcb-render -lxcb-shape
 
 if USE_GLX
 source_glx_h = vdpau_video_glx.h utils_glx.h

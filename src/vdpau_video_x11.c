@@ -29,6 +29,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/ipc.h>
+#include <xcb/composite.h>
 #include <sys/shm.h>
 #include <xcb/shm.h>
 #include <xcb/xcb.h>
@@ -263,8 +264,11 @@ output_surface_create(
         char *bahluxid_env = getenv("BAHLU_XID");
         if (bahluxid_env) {
             int bahluxid = atoi(bahluxid_env);
-            D(bug("BAHLU ALPHA: Setting up shared memory access with X server for window ID 0x%x\n", bahluxid));
+
             xcb_connection_t *xcb_conn = xcb_connect(NULL, NULL);
+            xcb_composite_redirect_window(xcb_conn, bahluxid, XCB_COMPOSITE_REDIRECT_AUTOMATIC);
+
+            D(bug("BAHLU ALPHA: Setting up shared memory access with X server for window ID 0x%x\n", bahluxid));
             xcb_shm_segment_info_t shminfo;
             shminfo.shmid = shmget(IPC_PRIVATE, obj_output->width * obj_output->height * 4,
                                    IPC_CREAT|0777);
