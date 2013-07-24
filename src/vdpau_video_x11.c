@@ -262,34 +262,36 @@ output_surface_create(
         char *bahluxid_env = getenv("BAHLU_XID");
         if (bahluxid_env) {
             driver_data->bahluxid = atoi(bahluxid_env);
+            driver_data->xcb_conn = xcb_connect(NULL, NULL);
 
             vdpau_information_message("BAHLU ALPHA: redirection BAHLU_XID window.\n");
-            driver_data->xcb_conn = xcb_connect(NULL, NULL);
             xcb_composite_redirect_window(driver_data->xcb_conn, driver_data->bahluxid,
                                           XCB_COMPOSITE_REDIRECT_AUTOMATIC);
 
-//            vdpau_information_message("BAHLU ALPHA: Setting up shared memory access with " \
-//                                      "X server for window ID 0x%x\n", driver_data->bahluxid);
-//            xcb_shm_segment_info_t shminfo;
-//            shminfo.shmid = shmget(IPC_PRIVATE, obj_output->width * obj_output->height * 4,
-//                                   IPC_CREAT|0777);
-//            if (shminfo.shmid == -1) {
-//                vdpau_error_message("shmget failed with errror: %s.\n", strerror(shminfo.shmid));
-//            }
-//            shminfo.shmaddr = shmat(shminfo.shmid, 0, 0);
-//            if (shminfo.shmaddr == (void *)(-1)) {
-//                vdpau_error_message("shmat failed with error: %s.\n", strerror(errno));
-//            }
-//            shminfo.shmseg = xcb_generate_id(driver_data->xcb_conn);
-//            xcb_void_cookie_t ck = xcb_shm_attach_checked(driver_data->xcb_conn, shminfo.shmseg,
-//                                                          shminfo.shmid, 0);
-//            xcb_generic_error_t *err = xcb_request_check(driver_data->xcb_conn, ck);
-//            if (err) {
-//                vdpau_error_message("xcb_shm_attach failed with error code = %d.\n", err->error_code);
-//                shmdt(shminfo.shmaddr);
-//            } else {
-//                driver_data->shminfo = shminfo;
-//            }
+            vdpau_information_message("BAHLU ALPHA: Setting up shared memory access with " \
+                                      "X server for window ID 0x%x\n", driver_data->bahluxid);
+            driver_data->shminfo.shmid = shmget(IPC_PRIVATE,
+                                                obj_output->width * obj_output->height * 4,
+                                                IPC_CREAT|0777);
+            if (driver_data->shminfo.shmid == -1) {
+                vdpau_error_message("shmget failed with errror: %s.\n",
+                                    strerror(driver_data->shminfo.shmid));
+            }
+            driver_data->shminfo.shmaddr = shmat(driver_data->shminfo.shmid, 0, 0);
+            if (driver_data->shminfo.shmaddr == (void *)(-1)) {
+                vdpau_error_message("shmat failed with error: %s.\n", strerror(errno));
+            }
+            driver_data->shminfo.shmseg = xcb_generate_id(driver_data->xcb_conn);
+            xcb_void_cookie_t ck = xcb_shm_attach_checked(driver_data->xcb_conn,
+                                                          driver_data->shminfo.shmseg,
+                                                          driver_data->shminfo.shmid,
+                                                          0);
+            xcb_generic_error_t *err = xcb_request_check(driver_data->xcb_conn, ck);
+            if (err) {
+                vdpau_error_message("xcb_shm_attach failed with error code = %d.\n",
+                                    err->error_code);
+                shmdt(driver_data->shminfo.shmaddr);
+            }
             vdp_status = vdpau_bitmap_surface_create(
                              driver_data,
                              driver_data->vdp_device,
@@ -676,21 +678,22 @@ flip_surface_unlocked(
     VdpStatus vdp_status;
 
     if (driver_data->bahluxid) {
-        xcb_get_image_cookie_t image_cookie = xcb_get_image(driver_data->xcb_conn,
-                                                            XCB_IMAGE_FORMAT_Z_PIXMAP,
+        xcb_shm_get_image_cookie_t image_cookie = xcb_shm_get_image(driver_data->xcb_conn,
                                                             driver_data->bahluxid, 0, 0,
                                                             obj_output->width,
-                                                            obj_output->height, ~0);
+                                                            obj_output->height, ~0,
+                                                            XCB_IMAGE_FORMAT_Z_PIXMAP,
+                                                            driver_data->shminfo.shmseg, 0);
         xcb_generic_error_t *err = NULL;
-        xcb_get_image_reply_t *imrep = xcb_get_image_reply(driver_data->xcb_conn,
+        xcb_shm_get_image_reply_t *imrep = xcb_shm_get_image_reply(driver_data->xcb_conn,
                                                                    image_cookie, &err);
         if (err) {
-            vdpau_information_message("xcb_shm_get_image error = %d.\n", (int)err->error_code);
+            vdpau_error_message("xcb_shm_get_image error = %d.\n", (int)err->error_code);
             free(err);
         } else {
             free(imrep);
         }
-        uint8_t *data = xcb_get_image_data(imrep);
+        uint8_t *data = driver_data->shminfo.shmaddr;
         uint8_t *source_data[3];
         source_data[0] = data;
         source_data[1] = data;
