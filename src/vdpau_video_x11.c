@@ -258,17 +258,17 @@ output_surface_create(
             return NULL;
         }
 
-        //setup shared memory access to the Bahlu window for alpha channel extraction
+        //setup shared memory access to the Bahlu window for UI blending
         char *bahluxid_env = getenv("BAHLU_XID");
         if (bahluxid_env) {
             driver_data->bahluxid = atoi(bahluxid_env);
             driver_data->xcb_conn = xcb_connect(NULL, NULL);
 
-            vdpau_information_message("BAHLU ALPHA: redirection BAHLU_XID window.\n");
+            vdpau_information_message("BAHLU: redirection BAHLU_XID window.\n");
             xcb_composite_redirect_window(driver_data->xcb_conn, driver_data->bahluxid,
                                           XCB_COMPOSITE_REDIRECT_AUTOMATIC);
 
-            vdpau_information_message("BAHLU ALPHA: Setting up shared memory access with " \
+            vdpau_information_message("BAHLU: Setting up shared memory access with " \
                                       "X server for window ID 0x%x\n", driver_data->bahluxid);
             driver_data->shminfo.shmid = shmget(IPC_PRIVATE,
                                                 obj_output->width * obj_output->height * 4,
@@ -356,7 +356,9 @@ output_surface_destroy(
         }
     }
 
+    vdpau_information_message("BAHLU: Destoying UI surface.\n");
     vdpau_bitmap_surface_destroy(driver_data, driver_data->ui_surface);
+    vdpau_information_message("BAHLU: Detaching shared memory segment.\n");
     xcb_shm_detach(driver_data->xcb_conn, driver_data->shminfo.shmseg);
     shmdt(driver_data->shminfo.shmaddr);
     shmctl(driver_data->shminfo.shmid, IPC_RMID, 0);
@@ -688,22 +690,13 @@ flip_surface_unlocked(
         xcb_shm_get_image_reply_t *imrep = xcb_shm_get_image_reply(driver_data->xcb_conn,
                                                                    image_cookie, &err);
         if (err) {
-            vdpau_error_message("xcb_shm_get_image error = %d.\n", (int)err->error_code);
+            vdpau_error_message("BAHLU: xcb_shm_get_image error = %d.\n", (int)err->error_code);
             free(err);
         } else {
             free(imrep);
         }
         uint8_t *data = driver_data->shminfo.shmaddr;
-        uint8_t *source_data[3];
-        source_data[0] = data;
-        source_data[1] = data;
-        source_data[2] = data;
-
         uint32_t pitch = obj_output->width*4;
-        uint32_t pitches_array[3];
-        pitches_array[0] = pitch;
-        pitches_array[1] = pitch;
-        pitches_array[2] = pitch;
 
         VdpRect destination_rect;
         destination_rect.x0 = 0;
@@ -712,8 +705,8 @@ flip_surface_unlocked(
         destination_rect.y1 = obj_output->height;
         vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
                                                           driver_data->ui_surface,
-                                                          (const uint8_t **)source_data,
-                                                          pitches_array,
+                                                          (const uint8_t **)(&data),
+                                                          &pitch,
                                                           &destination_rect
                                                           );
         if (vdp_status) {
