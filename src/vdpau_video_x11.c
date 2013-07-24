@@ -696,11 +696,11 @@ flip_surface_unlocked(
         source_data[1] = data;
         source_data[2] = data;
 
-        uint32_t stride = 0;
-        uint32_t stride_array[3];
-        stride_array[0] = stride;
-        stride_array[1] = stride;
-        stride_array[2] = stride;
+        uint32_t pitch = obj_output->width*4;
+        uint32_t pitches_array[3];
+        pitches_array[0] = pitch;
+        pitches_array[1] = pitch;
+        pitches_array[2] = pitch;
 
         VdpRect destination_rect;
         destination_rect.x0 = 0;
@@ -710,7 +710,7 @@ flip_surface_unlocked(
         vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
                                                           driver_data->ui_surface,
                                                           (const uint8_t **)source_data,
-                                                          stride_array,
+                                                          pitches_array,
                                                           &destination_rect
                                                           );
         if (vdp_status) {
