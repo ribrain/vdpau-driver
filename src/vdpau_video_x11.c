@@ -176,6 +176,23 @@ output_surface_ensure_size(
             obj_output->vdp_output_surfaces_dirty[i] = 0;
     }
 
+    if(driver_data->bahluxid && (driver_data->ui_surface == 0)) {
+        vdpau_information_message("BAHLU: Creating bitmap surface for UI: %dx%d.\n",
+                                  width, height);
+        VdpStatus vdp_status = vdpau_bitmap_surface_create(
+                         driver_data,
+                         driver_data->vdp_device,
+                         VDP_RGBA_FORMAT_B8G8R8A8,
+                         width,
+                         height,
+                         VDP_TRUE, //frequently accessed
+                         &(driver_data->ui_surface));
+         if (vdp_status) {
+             vdpau_error_message("failed to create image surface. Error: %s\n",
+                 vdpau_get_error_string(driver_data, vdp_status));
+         }
+    }
+
     if (obj_output->vdp_output_surfaces[obj_output->current_output_surface] == VDP_INVALID_HANDLE) {
         VdpStatus vdp_status;
         vdp_status = vdpau_output_surface_create(
@@ -292,18 +309,6 @@ output_surface_create(
                                     err->error_code);
                 shmdt(driver_data->shminfo.shmaddr);
             }
-            vdp_status = vdpau_bitmap_surface_create(
-                             driver_data,
-                             driver_data->vdp_device,
-                             VDP_RGBA_FORMAT_B8G8R8A8,
-                             obj_output->width,
-                             obj_output->height,
-                             VDP_TRUE, //frequently accessed
-                             &(driver_data->ui_surface));
-             if (vdp_status) {
-                 vdpau_error_message("failed to create image surface. Error: %s\n",
-                     vdpau_get_error_string(driver_data, vdp_status));
-             }
         }
 
         /* {0, 0, 0, 0} make transparent */
