@@ -30,8 +30,6 @@
 #include <string.h>
 #include <sys/ipc.h>
 #include <xcb/composite.h>
-#include <sys/shm.h>
-#include <xcb/shm.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_image.h>
 
@@ -176,7 +174,7 @@ output_surface_ensure_size(
             obj_output->vdp_output_surfaces_dirty[i] = 0;
     }
 
-    if(driver_data->bahluxid && (driver_data->ui_surface == 0)) {
+    if(driver_data->rgbaptr && (driver_data->ui_surface == 0)) {
         vdpau_information_message("BAHLU: Creating bitmap surface for UI: %dx%d.\n",
                                   width, height);
         VdpStatus vdp_status = vdpau_bitmap_surface_create(
@@ -275,40 +273,13 @@ output_surface_create(
             return NULL;
         }
 
-        //setup shared memory access to the Bahlu window for UI blending
-        char *bahluxid_env = getenv("BAHLU_XID");
-        if (bahluxid_env) {
-            driver_data->bahluxid = atoi(bahluxid_env);
-            driver_data->xcb_conn = xcb_connect(NULL, NULL);
-
-            vdpau_information_message("BAHLU: redirection BAHLU_XID window.\n");
-            xcb_composite_redirect_window(driver_data->xcb_conn, driver_data->bahluxid,
-                                          XCB_COMPOSITE_REDIRECT_AUTOMATIC);
-
-            vdpau_information_message("BAHLU: Setting up shared memory access with " \
-                                      "X server for window ID 0x%x\n", driver_data->bahluxid);
-            driver_data->shminfo.shmid = shmget(IPC_PRIVATE,
-                                                obj_output->width * obj_output->height * 4,
-                                                IPC_CREAT|0777);
-            if (driver_data->shminfo.shmid == -1) {
-                vdpau_error_message("shmget failed with errror: %s.\n",
-                                    strerror(driver_data->shminfo.shmid));
-            }
-            driver_data->shminfo.shmaddr = shmat(driver_data->shminfo.shmid, 0, 0);
-            if (driver_data->shminfo.shmaddr == (void *)(-1)) {
-                vdpau_error_message("shmat failed with error: %s.\n", strerror(errno));
-            }
-            driver_data->shminfo.shmseg = xcb_generate_id(driver_data->xcb_conn);
-            xcb_void_cookie_t ck = xcb_shm_attach_checked(driver_data->xcb_conn,
-                                                          driver_data->shminfo.shmseg,
-                                                          driver_data->shminfo.shmid,
-                                                          0);
-            xcb_generic_error_t *err = xcb_request_check(driver_data->xcb_conn, ck);
-            if (err) {
-                vdpau_error_message("xcb_shm_attach failed with error code = %d.\n",
-                                    err->error_code);
-                shmdt(driver_data->shminfo.shmaddr);
-            }
+        //Get point to pointer to access to the Bahlu UI rgba bitmap
+        char *rgbaptr_env = getenv("RGBA_PTR");
+        fprintf(stderr,"RGBA PTR: %s\n",rgbaptr_env);
+        if (rgbaptr_env) {
+            uint32_t ptr;
+            sscanf(rgbaptr_env,"%u",&ptr);
+            driver_data->rgbaptr=(void**)ptr;
         }
 
         /* {0, 0, 0, 0} make transparent */
@@ -363,10 +334,6 @@ output_surface_destroy(
 
     vdpau_information_message("BAHLU: Destoying UI surface.\n");
     vdpau_bitmap_surface_destroy(driver_data, driver_data->ui_surface);
-    vdpau_information_message("BAHLU: Detaching shared memory segment.\n");
-    xcb_shm_detach(driver_data->xcb_conn, driver_data->shminfo.shmseg);
-    shmdt(driver_data->shminfo.shmaddr);
-    shmctl(driver_data->shminfo.shmid, IPC_RMID, 0);
 
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
@@ -694,25 +661,8 @@ flip_surface_unlocked(
 
     VdpStatus vdp_status;
 
-    if (driver_data->bahluxid) {
-        xcb_shm_get_image_cookie_t image_cookie = xcb_shm_get_image(driver_data->xcb_conn,
-                                                            driver_data->bahluxid, 0, 0,
-                                                            obj_output->width,
-                                                            obj_output->height, ~0,
-                                                            XCB_IMAGE_FORMAT_Z_PIXMAP,
-                                                            driver_data->shminfo.shmseg, 0);
-        xcb_generic_error_t *err = NULL;
-        xcb_shm_get_image_reply_t *imrep = xcb_shm_get_image_reply(driver_data->xcb_conn,
-                                                                   image_cookie, &err);
-        if (err) {
-            vdpau_error_message("BAHLU: xcb_shm_get_image error = %d.\n", (int)err->error_code);
-            free(err);
-        } else {
-            free(imrep);
-        }
-        LAP("get image", ts_lap);
-
-        uint8_t *data = driver_data->shminfo.shmaddr;
+    if (driver_data->rgbaptr) {
+        uint8_t *data = *(driver_data->rgbaptr);
         uint32_t pitch = obj_output->width*4;
 
         VdpRect destination_rect;
@@ -720,7 +670,8 @@ flip_surface_unlocked(
         destination_rect.x1 = obj_output->width;
         destination_rect.y0 = 0;
         destination_rect.y1 = obj_output->height;
-        vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
+        if (data!=NULL)
+           vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
                                                           driver_data->ui_surface,
                                                           (const uint8_t **)(&data),
                                                           &pitch,
@@ -771,14 +722,14 @@ flip_surface_unlocked(
         }
         LAP("render bitmap surface", ts_lap);
     }
-
+    driver_data->pts+=40000;
     vdp_status = vdpau_presentation_queue_display(
         driver_data,
         obj_output->vdp_flip_queue,
         obj_output->vdp_output_surfaces[obj_output->current_output_surface],
         obj_output->width,
         obj_output->height,
-        0
+        driver_data->pts
     );
 
     if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueDisplay()"))
@@ -848,6 +799,7 @@ put_surface_unlocked(
             obj_output->vdp_output_surfaces[obj_output->current_output_surface],
             &dummy_time
         );
+        driver_data->pts=dummy_time;
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueBlockUntilSurfaceIdle()"))
             return vdpau_get_VAStatus(vdp_status);
     }
