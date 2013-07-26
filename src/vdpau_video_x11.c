@@ -679,6 +679,16 @@ flip_surface_unlocked(
     object_output_p      obj_output
 )
 {
+    struct timeval ts_start, ts_lap, ts;
+    gettimeofday(&ts_start, NULL);
+    ts_lap = ts_start;
+
+#define LAP(place, ref) fprintf(stderr, "ALPHA-TIME (" place "): "); \
+                        gettimeofday(&ts, NULL); \
+                        fprintf(stderr, "%lld.%.6ld\n", \
+                        (long long)(ts_start.tv_sec-ref.tv_sec), (ts.tv_usec-ref.tv_usec)); \
+                        ts_lap = ts;
+
     if (handle_display_preemption(driver_data) < 0)
         return VA_STATUS_ERROR_OPERATION_FAILED;
 
@@ -700,6 +710,8 @@ flip_surface_unlocked(
         } else {
             free(imrep);
         }
+        LAP("get image", ts_lap);
+
         uint8_t *data = driver_data->shminfo.shmaddr;
         uint32_t pitch = obj_output->width*4;
 
@@ -714,6 +726,7 @@ flip_surface_unlocked(
                                                           &pitch,
                                                           &destination_rect
                                                           );
+        LAP("put surface", ts_lap)
         if (vdp_status) {
             vdpau_error_message("Failed to put image bits to image surface. Error: %s.\n",
                                 vdpau_get_error_string(driver_data, vdp_status));
@@ -756,6 +769,7 @@ flip_surface_unlocked(
                                 vdpau_get_error_string(driver_data, vdp_status));
             return vdp_status;
         }
+        LAP("render bitmap surface", ts_lap);
     }
 
     vdp_status = vdpau_presentation_queue_display(
@@ -766,12 +780,16 @@ flip_surface_unlocked(
         obj_output->height,
         0
     );
+
     if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueDisplay()"))
         return vdpau_get_VAStatus(vdp_status);
 
+    LAP("presentation queue display", ts_lap);
     obj_output->displayed_output_surface = obj_output->current_output_surface;
     obj_output->current_output_surface   =
         (++obj_output->queued_surfaces) % VDPAU_MAX_OUTPUT_SURFACES;
+
+    LAP("total", ts_start);
     return VA_STATUS_SUCCESS;
 }
 
