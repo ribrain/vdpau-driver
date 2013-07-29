@@ -174,23 +174,6 @@ output_surface_ensure_size(
             obj_output->vdp_output_surfaces_dirty[i] = 0;
     }
 
-    if(driver_data->rgbaptr && (driver_data->ui_surface == 0)) {
-        vdpau_information_message("BAHLU: Creating bitmap surface for UI: %dx%d.\n",
-                                  width, height);
-        VdpStatus vdp_status = vdpau_bitmap_surface_create(
-                         driver_data,
-                         driver_data->vdp_device,
-                         VDP_RGBA_FORMAT_B8G8R8A8,
-                         width,
-                         height,
-                         VDP_TRUE, //frequently accessed
-                         &(driver_data->ui_surface));
-         if (vdp_status) {
-             vdpau_error_message("failed to create image surface. Error: %s\n",
-                 vdpau_get_error_string(driver_data, vdp_status));
-         }
-    }
-
     if (obj_output->vdp_output_surfaces[obj_output->current_output_surface] == VDP_INVALID_HANDLE) {
         VdpStatus vdp_status;
         vdp_status = vdpau_output_surface_create(
@@ -280,6 +263,22 @@ output_surface_create(
             uint32_t ptr;
             sscanf(rgbaptr_env,"%u",&ptr);
             driver_data->rgbaptr=(void**)ptr;
+            vdp_status = vdpau_bitmap_surface_create(
+                             driver_data,
+                             driver_data->vdp_device,
+                             VDP_RGBA_FORMAT_B8G8R8A8,
+                             obj_output->width,
+                             obj_output->height,
+                             VDP_TRUE, //frequently accessed
+                             &(driver_data->ui_surface));
+             if (vdp_status) {
+                 vdpau_error_message("failed to create image surface. Error: %s\n",
+                     vdpau_get_error_string(driver_data, vdp_status));
+             }
+             char *framecnt_ptr = getenv("FRAMECNT_PTR");
+             sscanf(framecnt_ptr,"%u",&ptr);
+             driver_data->frameptr=(uint32_t*)ptr;
+             driver_data->lastframe=*(driver_data->frameptr);
         }
 
         /* {0, 0, 0, 0} make transparent */
@@ -638,7 +637,7 @@ render_subpictures(
     }
     return VA_STATUS_SUCCESS;
 }
-
+int cnt=0; 
 // Queue surface for display
 static VAStatus
 flip_surface_unlocked(
@@ -670,13 +669,18 @@ flip_surface_unlocked(
         destination_rect.x1 = obj_output->width;
         destination_rect.y0 = 0;
         destination_rect.y1 = obj_output->height;
-        if (data!=NULL)
+        if ((data!=NULL) && ((driver_data->frameptr==NULL) ||
+                   ((driver_data->frameptr!=NULL)&&(*(driver_data->frameptr)!=driver_data->lastframe)))) {
            vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
                                                           driver_data->ui_surface,
                                                           (const uint8_t **)(&data),
                                                           &pitch,
                                                           &destination_rect
                                                           );
+           if  (driver_data->frameptr!=NULL)
+               driver_data->lastframe=*(driver_data->frameptr);
+           vdpau_information_message("Uploaded frame %u to GPU\n",driver_data->lastframe);
+        } else vdp_status=0;
         LAP("put surface", ts_lap)
         if (vdp_status) {
             vdpau_error_message("Failed to put image bits to image surface. Error: %s.\n",
