@@ -256,31 +256,6 @@ output_surface_create(
             return NULL;
         }
 
-        //Get point to pointer to access to the Bahlu UI rgba bitmap
-        char *rgbaptr_env = getenv("RGBA_PTR");
-        fprintf(stderr,"RGBA PTR: %s\n",rgbaptr_env);
-        if (rgbaptr_env) {
-            uint32_t ptr;
-            sscanf(rgbaptr_env,"%u",&ptr);
-            driver_data->rgbaptr=(void**)ptr;
-            vdp_status = vdpau_bitmap_surface_create(
-                             driver_data,
-                             driver_data->vdp_device,
-                             VDP_RGBA_FORMAT_B8G8R8A8,
-                             obj_output->width,
-                             obj_output->height,
-                             VDP_TRUE, //frequently accessed
-                             &(driver_data->ui_surface));
-             if (vdp_status) {
-                 vdpau_error_message("failed to create image surface. Error: %s\n",
-                     vdpau_get_error_string(driver_data, vdp_status));
-             }
-             char *framecnt_ptr = getenv("FRAMECNT_PTR");
-             sscanf(framecnt_ptr,"%u",&ptr);
-             driver_data->frameptr=(uint32_t*)ptr;
-             driver_data->lastframe=*(driver_data->frameptr);
-        }
-
         /* {0, 0, 0, 0} make transparent */
         VdpColor vdp_bg = {0.00, 0.00, 0.00, 0};
         vdp_status = vdpau_presentation_queue_set_background_color(
@@ -662,7 +637,7 @@ flip_surface_unlocked(
 
     if (driver_data->rgbaptr) {
         uint8_t *data = *(driver_data->rgbaptr);
-        uint32_t pitch = obj_output->width*4;
+        uint32_t pitch = driver_data->ui_width*4;
 
         VdpRect destination_rect;
         destination_rect.x0 = 0;
@@ -943,10 +918,38 @@ vdpau_PutSurface(
     if (cliprects || number_cliprects > 0)
         return VA_STATUS_ERROR_INVALID_PARAMETER;
 
-    unsigned int w, h;
+    unsigned int x, y, w, h;
     const XID xid = (XID)(uintptr_t)draw;
-    if (x11_get_geometry(driver_data->x11_dpy, xid, NULL, NULL, &w, &h) < 0)
+    if (x11_get_geometry(driver_data->x11_dpy, xid, &x, &y, &w, &h) < 0)
         return VA_STATUS_ERROR_OPERATION_FAILED;
+
+    //Get point to pointer to access to the Bahlu UI rgba bitmap
+    char *rgbaptr_env = getenv("RGBA_PTR");
+    fprintf(stderr,"RGBA PTR: %s\n",rgbaptr_env);
+    if (rgbaptr_env && (driver_data->ui_surface == 0)) {
+        uint32_t ptr;
+        sscanf(rgbaptr_env,"%u",&ptr);
+        driver_data->rgbaptr=(void**)ptr;
+        //RBI: HACK: 4:3 videos centered in VIDEO_XID window
+        driver_data->ui_width = w + 2*x;
+        driver_data->ui_height = h + 2*y;
+        VdpStatus vdp_status = vdpau_bitmap_surface_create(
+                         driver_data,
+                         driver_data->vdp_device,
+                         VDP_RGBA_FORMAT_B8G8R8A8,
+                         driver_data->ui_width,
+                         driver_data->ui_height,
+                         VDP_TRUE, //frequently accessed
+                         &(driver_data->ui_surface));
+         if (vdp_status) {
+             vdpau_error_message("failed to create image surface. Error: %s\n",
+                 vdpau_get_error_string(driver_data, vdp_status));
+         }
+         char *framecnt_ptr = getenv("FRAMECNT_PTR");
+         sscanf(framecnt_ptr,"%u",&ptr);
+         driver_data->frameptr=(uint32_t*)ptr;
+         driver_data->lastframe=*(driver_data->frameptr);
+    }
 
     VARectangle src_rect, dst_rect;
     src_rect.x      = srcx;
