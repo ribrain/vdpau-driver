@@ -275,6 +275,10 @@ output_surface_create(
                  vdpau_error_message("failed to create image surface. Error: %s\n",
                      vdpau_get_error_string(driver_data, vdp_status));
              }
+             char *framecnt_ptr = getenv("FRAMECNT_PTR");
+             sscanf(framecnt_ptr,"%u",&ptr);
+             driver_data->frameptr=(uint32_t*)ptr;
+             driver_data->lastframe=*(driver_data->frameptr);
         }
 
         /* {0, 0, 0, 0} make transparent */
@@ -634,7 +638,7 @@ render_subpictures(
     }
     return VA_STATUS_SUCCESS;
 }
-
+int cnt=0; 
 // Queue surface for display
 static VAStatus
 flip_surface_unlocked(
@@ -666,13 +670,18 @@ flip_surface_unlocked(
         destination_rect.x1 = obj_output->width;
         destination_rect.y0 = 0;
         destination_rect.y1 = obj_output->height;
-        if (data!=NULL)
+        if ((data!=NULL)&&
+             ((driver_data->frameptr==NULL)||
+                   ((driver_data->frameptr!=NULL)&&(*(driver_data->frameptr)!=driver_data->lastframe)))) {
            vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
                                                           driver_data->ui_surface,
                                                           (const uint8_t **)(&data),
                                                           &pitch,
                                                           &destination_rect
                                                           );
+           if  (driver_data->frameptr!=NULL) driver_data->lastframe=*(driver_data->frameptr);
+           fprintf(stderr,"Uploaded frame %u to GPU\n",driver_data->lastframe);
+        } else vdp_status=0;
         LAP("put surface", ts_lap)
         if (vdp_status) {
             vdpau_error_message("Failed to put image bits to image surface. Error: %s.\n",
