@@ -624,11 +624,11 @@ flip_surface_unlocked(
     gettimeofday(&ts_start, NULL);
     ts_lap = ts_start;
 
-#define LAP(place, ref) fprintf(stderr, "ALPHA-TIME (" place "): "); \
+#define LAP(place, ref) /*fprintf(stderr, "ALPHA-TIME (" place "): "); \
                         gettimeofday(&ts, NULL); \
                         fprintf(stderr, "%lld.%.6ld\n", \
                         (long long)(ts_start.tv_sec-ref.tv_sec), (ts.tv_usec-ref.tv_usec)); \
-                        ts_lap = ts;
+                        ts_lap = ts;*/
 
     if (handle_display_preemption(driver_data) < 0)
         return VA_STATUS_ERROR_OPERATION_FAILED;
