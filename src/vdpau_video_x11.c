@@ -180,8 +180,8 @@ output_surface_ensure_size(
             driver_data,
             driver_data->vdp_device,
             VDP_RGBA_FORMAT_B8G8R8A8,
-            obj_output->max_width,
-            obj_output->max_height,
+            obj_output->width,
+            obj_output->height,
             &obj_output->vdp_output_surfaces[obj_output->current_output_surface]
         );
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpOutputSurfaceCreate()"))
@@ -931,8 +931,8 @@ vdpau_PutSurface(
         sscanf(rgbaptr_env,"%u",&ptr);
         driver_data->rgbaptr=(void**)ptr;
         //RBI: HACK: 4:3 videos centered in VIDEO_XID window
-        driver_data->ui_width = w + 2*x;
-        driver_data->ui_height = h + 2*y;
+        driver_data->ui_width = w;
+        driver_data->ui_height = h;
         VdpStatus vdp_status = vdpau_bitmap_surface_create(
                          driver_data,
                          driver_data->vdp_device,
