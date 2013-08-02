@@ -646,7 +646,7 @@ flip_surface_unlocked(
         destination_rect.y1 = obj_output->height;
         if ((data!=NULL) && ((driver_data->frameptr==NULL) ||
                    ((driver_data->frameptr!=NULL)&&(*(driver_data->frameptr)!=driver_data->lastframe)))) {
-           vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
+           vdp_status = vdpau_output_surface_put_bits_native(driver_data,
                                                           driver_data->ui_surface,
                                                           (const uint8_t **)(&data),
                                                           &pitch,
@@ -686,7 +686,7 @@ flip_surface_unlocked(
         blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
         blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
         blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
-        vdpau_output_surface_render_bitmap_surface(driver_data,
+        vdpau_output_surface_render_output_surface(driver_data,
                                                    obj_output->vdp_output_surfaces[obj_output->current_output_surface],
                                                    &destination_rect,
                                                    driver_data->ui_surface,
@@ -933,13 +933,12 @@ vdpau_PutSurface(
         //RBI: HACK: 4:3 videos centered in VIDEO_XID window
         driver_data->ui_width = w;
         driver_data->ui_height = h;
-        VdpStatus vdp_status = vdpau_bitmap_surface_create(
+        VdpStatus vdp_status = vdpau_output_surface_create(
                          driver_data,
                          driver_data->vdp_device,
                          VDP_RGBA_FORMAT_B8G8R8A8,
                          driver_data->ui_width,
                          driver_data->ui_height,
-                         VDP_TRUE, //frequently accessed
                          &(driver_data->ui_surface));
          if (vdp_status) {
              vdpau_error_message("failed to create image surface. Error: %s\n",

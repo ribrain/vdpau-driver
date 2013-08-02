@@ -105,7 +105,7 @@ struct vdpau_driver_data {
     unsigned int                is_preempted;
     void**                      rgbaptr;
     VdpTime                     pts; 
-    VdpBitmapSurface            ui_surface;
+    VdpOutputSurface            ui_surface;
     uint32_t                    ui_width;
     uint32_t                    ui_height;
     uint32_t                   *frameptr;
