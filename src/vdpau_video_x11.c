@@ -738,7 +738,50 @@ flip_surface_unlocked(
         destination_rect.x1 = obj_output->width;
         destination_rect.y0 = 0;
         destination_rect.y1 = obj_output->height;
+/*
+    if (driver_data->rgbaptr) {
+        uint8_t *data = *(driver_data->rgbaptr);
+        uint32_t pitch = obj_output->width*4;
 
+        VdpRect destination_rect;
+        destination_rect.x0 = 0;
+        destination_rect.x1 = obj_output->width;
+        destination_rect.y0 = 0;
+        destination_rect.y1 = obj_output->height;
+        if ((data!=NULL)&&
+             ((driver_data->frameptr==NULL)||
+                   ((driver_data->frameptr!=NULL)&&(*(driver_data->frameptr)!=driver_data->lastframe)))) {
+           vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
+                                                          driver_data->ui_surface,
+                                                          (const uint8_t **)(&data),
+                                                          &pitch,
+                                                          &destination_rect
+                                                          );
+           if  (driver_data->frameptr!=NULL) driver_data->lastframe=*(driver_data->frameptr);
+           fprintf(stderr,"Uploaded frame %u to GPU\n",driver_data->lastframe);
+        } else vdp_status=0;
+        LAP("put surface", ts_lap)
+        if (vdp_status) {
+            vdpau_error_message("Failed to put image bits to image surface. Error: %s.\n",
+                                vdpau_get_error_string(driver_data, vdp_status));
+            //get supported formats
+            VdpBool b8g8r8a8_supported = 0;
+            uint32_t max_width, max_height;
+            vdp_status = vdpau_bitmap_surface_query_capabilities(
+                        driver_data,
+                        driver_data->vdp_device,
+                        VDP_RGBA_FORMAT_B8G8R8A8,
+                        &b8g8r8a8_supported,
+                        &max_width,
+                        &max_height);
+            vdpau_error_message("VDP_RGBA_FORMAT_B8G8R8A8 supported? %s. " \
+                                 "max size: %dx%d\tstatus: %s\n",
+                                        b8g8r8a8_supported ? "yes" : "no",
+                                        max_width, max_height,
+                                        vdpau_get_error_string(driver_data, vdp_status));
+            return VA_STATUS_ERROR_INVALID_IMAGE_FORMAT;
+        }
+*/
         VdpOutputSurfaceRenderBlendState blend_state;
         blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
         blend_state.blend_factor_source_color      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
@@ -761,7 +804,7 @@ flip_surface_unlocked(
             return vdp_status;
         }
         LAP("render bitmap surface", ts_lap);
-
+    //}
     driver_data->pts+=40000;
     vdp_status = vdpau_presentation_queue_display(
         driver_data,
