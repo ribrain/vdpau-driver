@@ -36,6 +36,43 @@
 #define DEBUG 1
 #include "debug.h"
 
+int ui_surface_ready=0; 
+vdpau_driver_data_t *last_data=0;
+pthread_mutex_t ui_surface_mutex;
+
+int putui(uint8_t* data, uint16_t x0, uint16_t y0, uint16_t w, uint16_t h){
+    if ((last_data!=0)&&(ui_surface_ready)) {
+        pthread_mutex_lock(&(ui_surface_mutex));
+        if (!ui_surface_ready) {
+           pthread_mutex_unlock(&(ui_surface_mutex));
+           return 1;
+        }
+        uint32_t pitch = 1920*4;
+        VdpRect destination_rect;
+        destination_rect.x0 = x0;
+        destination_rect.x1 = x0+w;
+        destination_rect.y0 = y0;
+        destination_rect.y1 = y0+h;
+        data+=x0*4+pitch*y0;
+        fprintf(stderr,"Enter put bits native %d\n",last_data->ui_surface);
+        int vdp_status = vdpau_bitmap_surface_put_bits_native(last_data,
+                                                          last_data->ui_surface,
+                                                          (const uint8_t **)(&data),
+                                                          &pitch,
+                                                          &destination_rect
+                                                          );
+        fprintf(stderr,"Done put bits native\n");
+        if (vdp_status) {
+           fprintf(stderr,"Failure in put bits native: %d\n",vdp_status);
+        }
+        pthread_mutex_unlock(&(ui_surface_mutex));
+    } else {
+        fprintf(stderr,"Not rendering frame, no video yet\n");
+        return 1;
+    }
+
+    return 0;
+}
 // Handle VT display preemption
 static int handle_display_preemption(vdpau_driver_data_t *driver_data)
 {
@@ -199,6 +236,7 @@ output_surface_create(
     unsigned int         height
 )
 {
+    fprintf(stderr,"Output surface create width %d height %d\n",width,height);
     VASurfaceID surface = object_heap_allocate(&driver_data->output_heap);
     if (surface == VA_INVALID_ID)
         return NULL;
@@ -260,6 +298,10 @@ output_surface_create(
         char *rgbaptr_env = getenv("RGBA_PTR");
         fprintf(stderr,"RGBA PTR: %s\n",rgbaptr_env);
         if (rgbaptr_env) {
+            if (last_data==0) {
+                 pthread_mutex_init(&(ui_surface_mutex), NULL);
+            }
+            pthread_mutex_lock(&(ui_surface_mutex));
             uint32_t ptr;
             sscanf(rgbaptr_env,"%u",&ptr);
             driver_data->rgbaptr=(void**)ptr;
@@ -275,12 +317,36 @@ output_surface_create(
                  vdpau_error_message("failed to create image surface. Error: %s\n",
                      vdpau_get_error_string(driver_data, vdp_status));
              }
-             char *framecnt_ptr = getenv("FRAMECNT_PTR");
-             sscanf(framecnt_ptr,"%u",&ptr);
-             driver_data->frameptr=(uint32_t*)ptr;
-             driver_data->lastframe=*(driver_data->frameptr);
-        }
+             // initialize.
+             uint32_t pitch = obj_output->width*4;
 
+             VdpRect destination_rect;
+             destination_rect.x0 = 0;
+             destination_rect.x1 = obj_output->width;
+             destination_rect.y0 = 0;
+             destination_rect.y1 = obj_output->height;
+             vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
+                                                          driver_data->ui_surface,
+                                                          (const uint8_t **)(driver_data->rgbaptr),
+                                                          &pitch,
+                                                          &destination_rect
+                                                          );
+             if (vdp_status) {
+                 vdpau_error_message("failed to put image on initial surface. Error: %s\n",
+                     vdpau_get_error_string(driver_data, vdp_status));
+             }
+             fprintf(stderr,"Put initial image on new ui surface %d\n",driver_data->ui_surface);
+             //if (last_data==0) {
+                 last_data=driver_data;
+                 char buf[12];
+                 int (*putuiptr)(uint8_t*, uint16_t,uint16_t,uint16_t,uint16_t)=&putui;
+                 sprintf(buf, "%u", (uint32_t)putuiptr);
+                 setenv("PUTUI_PTR",buf,1);
+             //}
+             //ui_surface_ready=1;
+             pthread_mutex_unlock(&(ui_surface_mutex));
+            
+        }
         /* {0, 0, 0, 0} make transparent */
         VdpColor vdp_bg = {0.00, 0.00, 0.00, 0};
         vdp_status = vdpau_presentation_queue_set_background_color(
@@ -304,7 +370,12 @@ output_surface_destroy(
 {
     if (!obj_output)
         return;
-
+    
+    pthread_mutex_lock(&(ui_surface_mutex));
+    VdpBitmapSurface tempsurface=driver_data->ui_surface;
+    vdpau_information_message("BAHLU: Destroying UI surface %d.\n",driver_data->ui_surface);
+    ui_surface_ready=0;
+    
     if (obj_output->vdp_flip_queue != VDP_INVALID_HANDLE) {
         vdpau_presentation_queue_destroy(
             driver_data,
@@ -331,12 +402,12 @@ output_surface_destroy(
         }
     }
 
-    vdpau_information_message("BAHLU: Destoying UI surface.\n");
-    vdpau_bitmap_surface_destroy(driver_data, driver_data->ui_surface);
-    vdpau_information_message("BAHLU: Detaching shared memory segment.\n");
-
+    vdpau_bitmap_surface_destroy(driver_data, tempsurface);
+    pthread_mutex_unlock(&(ui_surface_mutex));
+    
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
+    vdpau_information_message("BAHLU: Done destroying. %p %p\n",last_data,driver_data);
 }
 
 // Reference output surface
@@ -638,7 +709,8 @@ render_subpictures(
     }
     return VA_STATUS_SUCCESS;
 }
-int cnt=0; 
+
+
 // Queue surface for display
 static VAStatus
 flip_surface_unlocked(
@@ -646,6 +718,7 @@ flip_surface_unlocked(
     object_output_p      obj_output
 )
 {
+    ui_surface_ready=1;
     struct timeval ts_start, ts_lap, ts;
     gettimeofday(&ts_start, NULL);
     ts_lap = ts_start;
@@ -660,49 +733,11 @@ flip_surface_unlocked(
         return VA_STATUS_ERROR_OPERATION_FAILED;
 
     VdpStatus vdp_status;
-
-    if (driver_data->rgbaptr) {
-        uint8_t *data = *(driver_data->rgbaptr);
-        uint32_t pitch = obj_output->width*4;
-
         VdpRect destination_rect;
         destination_rect.x0 = 0;
         destination_rect.x1 = obj_output->width;
         destination_rect.y0 = 0;
         destination_rect.y1 = obj_output->height;
-        if ((data!=NULL)&&
-             ((driver_data->frameptr==NULL)||
-                   ((driver_data->frameptr!=NULL)&&(*(driver_data->frameptr)!=driver_data->lastframe)))) {
-           vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
-                                                          driver_data->ui_surface,
-                                                          (const uint8_t **)(&data),
-                                                          &pitch,
-                                                          &destination_rect
-                                                          );
-           if  (driver_data->frameptr!=NULL) driver_data->lastframe=*(driver_data->frameptr);
-           fprintf(stderr,"Uploaded frame %u to GPU\n",driver_data->lastframe);
-        } else vdp_status=0;
-        LAP("put surface", ts_lap)
-        if (vdp_status) {
-            vdpau_error_message("Failed to put image bits to image surface. Error: %s.\n",
-                                vdpau_get_error_string(driver_data, vdp_status));
-            //get supported formats
-            VdpBool b8g8r8a8_supported = 0;
-            uint32_t max_width, max_height;
-            vdp_status = vdpau_bitmap_surface_query_capabilities(
-                        driver_data,
-                        driver_data->vdp_device,
-                        VDP_RGBA_FORMAT_B8G8R8A8,
-                        &b8g8r8a8_supported,
-                        &max_width,
-                        &max_height);
-            vdpau_error_message("VDP_RGBA_FORMAT_B8G8R8A8 supported? %s. " \
-                                 "max size: %dx%d\tstatus: %s\n",
-                                        b8g8r8a8_supported ? "yes" : "no",
-                                        max_width, max_height,
-                                        vdpau_get_error_string(driver_data, vdp_status));
-            return VA_STATUS_ERROR_INVALID_IMAGE_FORMAT;
-        }
 
         VdpOutputSurfaceRenderBlendState blend_state;
         blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
@@ -726,7 +761,7 @@ flip_surface_unlocked(
             return vdp_status;
         }
         LAP("render bitmap surface", ts_lap);
-    }
+
     driver_data->pts+=40000;
     vdp_status = vdpau_presentation_queue_display(
         driver_data,

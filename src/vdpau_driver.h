@@ -106,8 +106,6 @@ struct vdpau_driver_data {
     void**                      rgbaptr;
     VdpTime                     pts; 
     VdpBitmapSurface            ui_surface;
-    uint32_t                   *frameptr;
-    uint32_t                    lastframe;
 };
 
 typedef struct object_config   *object_config_p;
