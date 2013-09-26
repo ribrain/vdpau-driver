@@ -63,6 +63,8 @@ output_surface_destroy(
     object_output_p      obj_output
 ) attribute_hidden;
 
+void force_redraw_cairo() attribute_hidden;
+
 // Reference output surface
 object_output_p
 output_surface_ref(

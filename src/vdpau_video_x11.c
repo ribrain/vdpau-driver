@@ -39,8 +39,10 @@
 int ui_surface_ready=0; 
 vdpau_driver_data_t *last_data=0;
 pthread_mutex_t ui_surface_mutex;
+int (*forcerd)(int)=NULL;
 
 int putui(uint8_t* data, uint16_t x0, uint16_t y0, uint16_t w, uint16_t h){
+    fprintf(stderr,"Putui \n");
     if ((last_data!=0)&&(ui_surface_ready)) {
         pthread_mutex_lock(&(ui_surface_mutex));
         if (ui_surface_ready==0) {
@@ -305,6 +307,12 @@ output_surface_create(
                  int (*putuiptr)(uint8_t*, uint16_t,uint16_t,uint16_t,uint16_t)=&putui;
                  sprintf(buf, "%u", (uint32_t)putuiptr);
                  setenv("PUTUI_PTR",buf,1);
+                 char *forceredraw = getenv("FORCEREDRAW");
+                 fprintf(stderr,"FORCE REDRAW PTR: %s\n",forceredraw);
+                 if (forceredraw) {
+                      sscanf(forceredraw,"%u",&forcerd);
+                      fprintf(stderr,"Parsed force redraw pointer %p\n",forcerd); 
+                 } 
             }
             uint32_t ptr;
             sscanf(rgbaptr_env,"%u",&ptr);
@@ -337,7 +345,18 @@ output_surface_create(
     }
     return obj_output;
 }
-
+void force_redraw_cairo(){
+    if (forcerd!=NULL){
+         pthread_mutex_lock(&(ui_surface_mutex));
+         ui_surface_ready=0;
+         pthread_mutex_unlock(&(ui_surface_mutex));
+         fprintf(stderr,"Force update after vlc destroy\n");
+         int upd = (*forcerd)(2); // 2 = redraw on cairo surface
+         fprintf(stderr,"Force update result %d\n",upd);
+         usleep(60000); 
+         fprintf(stderr,"slept a bit\n");
+    }
+}
 // Destroy output surface
 void
 output_surface_destroy(
@@ -351,7 +370,6 @@ output_surface_destroy(
     pthread_mutex_lock(&(ui_surface_mutex));
     VdpBitmapSurface tempsurface=driver_data->ui_surface;
     vdpau_information_message("BAHLU: Destroying UI surface %d.\n",driver_data->ui_surface);
-    ui_surface_ready=0;
     
     if (obj_output->vdp_flip_queue != VDP_INVALID_HANDLE) {
         vdpau_presentation_queue_destroy(
@@ -695,6 +713,7 @@ flip_surface_unlocked(
     object_output_p      obj_output
 )
 {
+    int force_redraw=0;
     VdpStatus vdp_status=0;
     pthread_mutex_lock(&(ui_surface_mutex));
     if (driver_data->first_picture) {
@@ -716,9 +735,9 @@ flip_surface_unlocked(
                      vdpau_get_error_string(driver_data, vdp_status));
              }
              fprintf(stderr,"Put initial image on new ui surface %d %d %d\n",driver_data->ui_surface,obj_output->width,obj_output->height);
-             // TODO Force Webkit to undraw.
              driver_data->first_picture=0;
              ui_surface_ready=1;
+             force_redraw=1;
     }
     struct timeval ts_start, ts_lap, ts;
     gettimeofday(&ts_start, NULL);
@@ -773,7 +792,12 @@ flip_surface_unlocked(
     obj_output->displayed_output_surface = obj_output->current_output_surface;
     obj_output->current_output_surface   =
         (++obj_output->queued_surfaces) % VDPAU_MAX_OUTPUT_SURFACES;
-
+    if (force_redraw) {
+             // TODO Force Webkit to undraw.
+             fprintf(stderr,"Force update\n");
+             int upd = (*forcerd)(1); // 1 = undraw cairo surface.
+             fprintf(stderr,"Force update result %d\n",upd);
+    }
     return VA_STATUS_SUCCESS;
 }
 
