@@ -66,6 +66,7 @@ struct vdpau_vtable {
     VdpPresentationQueueQuerySurfaceStatus *vdp_presentation_queue_query_surface_status;
     VdpPresentationQueueTargetCreateX11 *vdp_presentation_queue_target_create_x11;
     VdpPresentationQueueTargetDestroy   *vdp_presentation_queue_target_destroy;
+    VdpPresentationQueueGetTime         *vdp_presentation_queue_get_time;
     VdpDecoderCreate                    *vdp_decoder_create;
     VdpDecoderDestroy                   *vdp_decoder_destroy;
     VdpDecoderRender                    *vdp_decoder_render;
@@ -454,6 +455,14 @@ vdpau_presentation_queue_query_surface_status(
     VdpOutputSurface            surface,
     VdpPresentationQueueStatus *status,
     VdpTime                    *first_presentation_time
+) attribute_hidden;
+
+// VdpPresentationQueueGetTime
+VdpStatus
+vdpau_presentation_queue_get_time(
+    vdpau_driver_data_p         driver_data,
+    VdpPresentationQueue        presentation_queue,
+    VdpTime                    *time
 ) attribute_hidden;
 
 // VdpPresentationQueueTargetCreateX11

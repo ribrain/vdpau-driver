@@ -132,6 +132,8 @@ int vdpau_gate_init(vdpau_driver_data_t *driver_data)
                   get_error_string);
     VDP_INIT_PROC(PREEMPTION_CALLBACK_REGISTER,
                   preemption_callback_register);
+    VDP_INIT_PROC(PRESENTATION_QUEUE_GET_TIME,
+                  presentation_queue_get_time);
 
 #undef VDP_INIT_PROC
     return 0;
@@ -914,3 +916,15 @@ vdpau_preemption_callback_register(vdpau_driver_data_t *driver_data,
                         callback,
                         context);
 }
+
+// VdpPresentationQueueGetTime
+VdpStatus
+vdpau_presentation_queue_get_time(
+    vdpau_driver_data_p         driver_data,
+    VdpPresentationQueue        presentation_queue,
+    VdpTime                    *time)
+{
+    return VDPAU_INVOKE(presentation_queue_get_time, presentation_queue, time);
+
+}
+
