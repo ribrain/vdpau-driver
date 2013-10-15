@@ -103,10 +103,11 @@ struct vdpau_driver_data {
     unsigned int                va_display_attrs_count;
     char                        va_vendor[256];
     unsigned int                is_preempted;
-    void**                      rgbaptr;
-    VdpTime                     pts; 
     VdpOutputSurface            ui_surface;
+    pthread_mutex_t            *ui_mutex;
     uint32_t                    first_picture;
+    int                         preinit;
+    int                        *vlc_active;
 };
 
 typedef struct object_config   *object_config_p;

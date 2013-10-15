@@ -318,8 +318,6 @@ vdpau_DestroySurfaces(
 )
 {
     VDPAU_DRIVER_DATA_INIT;
-    fprintf(stderr,"Force redraw because destroying\n");
-    force_redraw_cairo();
 
     int i, j, n;
     for (i = num_surfaces - 1; i >= 0; i--) {

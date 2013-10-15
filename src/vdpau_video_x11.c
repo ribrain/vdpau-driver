@@ -38,50 +38,6 @@
 #define DEBUG 1
 #include "debug.h"
 
-int ui_surface_ready=0; 
-vdpau_driver_data_t *last_data=0;
-pthread_mutex_t ui_surface_mutex;
-int (*forcerd)(int)=NULL;
-
-int putui(uint8_t* data, uint16_t x0, uint16_t y0, uint16_t w, uint16_t h){
-    //fprintf(stderr,"Putui %p\n",data);
-    if (data==NULL) {
-	force_redraw_cairo();
-        return 0;
-    }
-    if ((last_data!=0)&&(ui_surface_ready)) {
-        pthread_mutex_lock(&(ui_surface_mutex));
-        if (ui_surface_ready==0) {
-           pthread_mutex_unlock(&(ui_surface_mutex));
-           return 1;
-        }
-        uint32_t pitch = 1920*4;
-        VdpRect destination_rect;
-        destination_rect.x0 = x0;
-        destination_rect.x1 = x0+w;
-        destination_rect.y0 = y0;
-        destination_rect.y1 = y0+h;
-        data+=x0*4+pitch*y0;
-        //fprintf(stderr,"Enter put bits native %d\n",last_data->ui_surface);
-        int vdp_status = vdpau_bitmap_surface_put_bits_native(last_data,
-                                                          last_data->ui_surface,
-                                                          (const uint8_t **)(&data),
-                                                          &pitch,
-                                                          &destination_rect
-                                                          );
-        //fprintf(stderr,"Done put bits native\n");
-        if (vdp_status) {
-           fprintf(stderr,"Failure in put bits native: %d\n",vdp_status);
-        }
-
-        pthread_mutex_unlock(&(ui_surface_mutex));
-    } else {
-        //fprintf(stderr,"Not rendering frame, no video yet\n");
-        return 1;
-    }
-
-    return 0;
-}
 // Handle VT display preemption
 static int handle_display_preemption(vdpau_driver_data_t *driver_data)
 {
@@ -278,63 +234,47 @@ output_surface_create(
     }
     pthread_mutex_init(&obj_output->vdp_output_surfaces_lock, NULL);
     if (drawable != None) {
-        VdpStatus vdp_status;
-        vdp_status = vdpau_presentation_queue_target_create_x11(
-            driver_data,
-            driver_data->vdp_device,
-            obj_output->drawable,
-            &obj_output->vdp_flip_target
-        );
-        if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueTargetCreateX115)")) {
-            output_surface_destroy(driver_data, obj_output);
-            return NULL;
-        }
-
-        vdp_status = vdpau_presentation_queue_create(
-            driver_data,
-            driver_data->vdp_device,
-            obj_output->vdp_flip_target,
-            &obj_output->vdp_flip_queue
-        );
-        if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueCreate()")) {
-            output_surface_destroy(driver_data, obj_output);
-            return NULL;
-        }
-
-        //Get point to pointer to access to the Bahlu UI rgba bitmap
-        char *rgbaptr_env = getenv("RGBA_PTR");
-        //fprintf(stderr,"RGBA PTR: %s %d %d\n",rgbaptr_env,obj_output->width, obj_output->height);
-        if (rgbaptr_env) {
-            if (last_data==0) {
-                 pthread_mutex_init(&(ui_surface_mutex), NULL);
-                 char buf[12];
-                 int (*putuiptr)(uint8_t*, uint16_t,uint16_t,uint16_t,uint16_t)=&putui;
-                 sprintf(buf, "%u", (uint32_t)putuiptr);
-                 setenv("PUTUI_PTR",buf,1);
-                 char *forceredraw = getenv("FORCEREDRAW");
-                 //fprintf(stderr,"FORCE REDRAW PTR: %s\n",forceredraw);
-                 if (forceredraw) {
-                      sscanf(forceredraw,"%u",&forcerd);
-                      //fprintf(stderr,"Parsed force redraw pointer %p\n",forcerd); 
-                 } 
+        VdpStatus vdp_status=VDP_STATUS_OK;
+        if (driver_data->preinit==1) {
+            char* vdp_target_str = getenv("VDP_TARGET");
+            sscanf(vdp_target_str,"%u",&obj_output->vdp_flip_target);
+            char* vdp_queue_str = getenv("VDP_QUEUE");
+            sscanf(vdp_queue_str,"%u",&obj_output->vdp_flip_queue);
+            char* vlc_active_str=getenv("VLC_ACTIVE");
+            sscanf(vlc_active_str,"%u",&driver_data->vlc_active); 
+            fprintf(stderr,"Presentation queue target: %d\n",obj_output->vdp_flip_target);
+        } else {
+            vdp_status = vdpau_presentation_queue_target_create_x11(
+                driver_data,
+                driver_data->vdp_device,
+                obj_output->drawable,
+                &obj_output->vdp_flip_target
+            );
+            if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueTargetCreateX115)")) {
+                output_surface_destroy(driver_data, obj_output);
+                return NULL;
             }
-            uint32_t ptr;
-            sscanf(rgbaptr_env,"%u",&ptr);
-            driver_data->rgbaptr=(void**)ptr;
-            vdp_status = vdpau_bitmap_surface_create(
-                             driver_data,
-                             driver_data->vdp_device,
-                             VDP_RGBA_FORMAT_B8G8R8A8,
-                             obj_output->width,
-                             obj_output->height,
-                             VDP_TRUE, //frequently accessed
-                             &(driver_data->ui_surface));
-             if (vdp_status) {
-                 vdpau_error_message("failed to create image surface. Error: %s\n",
-                     vdpau_get_error_string(driver_data, vdp_status));
-             }
-             driver_data->first_picture=1;
-             last_data=driver_data;
+            vdp_status = vdpau_presentation_queue_create(
+                driver_data,
+                driver_data->vdp_device,
+                obj_output->vdp_flip_target,
+                &obj_output->vdp_flip_queue
+            );
+        }
+        if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueCreate()")) {
+            fprintf(stderr,"Failed to create present queue\n");
+            output_surface_destroy(driver_data, obj_output);
+            return NULL;
+        }
+
+        fprintf(stderr,"done creating presentation queue\n");
+        if (driver_data->ui_surface==0) {
+            char* uisurf_str = getenv("VDP_UI_SURFACE");
+            if (uisurf_str!=NULL) {
+            sscanf(uisurf_str,"%u",&(driver_data->ui_surface));
+            char* uimutex_str = getenv("VDP_UI_MUTEX");
+            sscanf(uimutex_str,"%u",&(driver_data->ui_mutex));
+            }
         }
         /* {0, 0, 0, 0} make transparent */
         VdpColor vdp_bg = {0.01, 0.02, 0.03, 0};
@@ -349,15 +289,7 @@ output_surface_create(
     }
     return obj_output;
 }
-void force_redraw_cairo(){
-    if (forcerd!=NULL){
-         pthread_mutex_lock(&(ui_surface_mutex));
-         ui_surface_ready=0;
-         pthread_mutex_unlock(&(ui_surface_mutex));
-         //fprintf(stderr,"Force update after vlc destroy\n");
-         int upd = (*forcerd)(2); // 2 = redraw on cairo surface
-    }
-}
+
 // Destroy output surface
 void
 output_surface_destroy(
@@ -367,27 +299,26 @@ output_surface_destroy(
 {
     if (!obj_output)
         return;
-    
-    pthread_mutex_lock(&(ui_surface_mutex));
-    VdpBitmapSurface tempsurface=driver_data->ui_surface;
-    vdpau_information_message("BAHLU: Destroying UI surface %d.\n",driver_data->ui_surface);
-
-    if (obj_output->vdp_flip_queue != VDP_INVALID_HANDLE) {
-        vdpau_presentation_queue_destroy(
-            driver_data,
-            obj_output->vdp_flip_queue
-        );
-        obj_output->vdp_flip_queue = VDP_INVALID_HANDLE;
+    if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
+    if (driver_data->vlc_active!=NULL) {
+        *(driver_data->vlc_active) = 0;
+    } 
+    if (driver_data->preinit==0) {
+        if (obj_output->vdp_flip_queue != VDP_INVALID_HANDLE) {
+            vdpau_presentation_queue_destroy(
+                driver_data,
+                obj_output->vdp_flip_queue
+            );
+            obj_output->vdp_flip_queue = VDP_INVALID_HANDLE;
+        }
+        if (obj_output->vdp_flip_target != VDP_INVALID_HANDLE) {
+            vdpau_presentation_queue_target_destroy(
+                driver_data,
+                obj_output->vdp_flip_target
+            );
+            obj_output->vdp_flip_target = VDP_INVALID_HANDLE;
+        }
     }
-
-    if (obj_output->vdp_flip_target != VDP_INVALID_HANDLE) {
-        vdpau_presentation_queue_target_destroy(
-            driver_data,
-            obj_output->vdp_flip_target
-        );
-        obj_output->vdp_flip_target = VDP_INVALID_HANDLE;
-    }
-
     unsigned int i;
     for (i = 0; i < VDPAU_MAX_OUTPUT_SURFACES; i++) {
         VdpOutputSurface vdp_output_surface;
@@ -397,13 +328,12 @@ output_surface_destroy(
             obj_output->vdp_output_surfaces[i] = VDP_INVALID_HANDLE;
         }
     }
-    vdpau_bitmap_surface_destroy(driver_data, tempsurface);
 
-    pthread_mutex_unlock(&(ui_surface_mutex));
+     if (driver_data->ui_mutex) pthread_mutex_unlock(driver_data->ui_mutex);
     
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
-    vdpau_information_message("BAHLU: Done destroying. %p %p\n",last_data,driver_data);
+    vdpau_information_message("BAHLU: Done destroying. \n");
 }
 
 // Reference output surface
@@ -567,6 +497,7 @@ render_surface(
         &dst_rect,
         flags
     );
+
     //fprintf(stderr,"Done Rendering with VdpVideoSurface %08x\n", obj_surface->vdp_surface);
     obj_output->vdp_output_surfaces_dirty[obj_output->current_output_surface] = 1;
     return vdpau_get_VAStatus(vdp_status);
@@ -710,7 +641,6 @@ render_subpictures(
     }
     return VA_STATUS_SUCCESS;
 }
-
 // Queue surface for display
 static VAStatus
 flip_surface_unlocked(
@@ -718,37 +648,15 @@ flip_surface_unlocked(
     object_output_p      obj_output
 )
 {
-    struct timeval t1;
-    uint64_t elapsedTime;
-    int force_redraw=0;
     VdpStatus vdp_status=0;
-    pthread_mutex_lock(&(ui_surface_mutex));
+    if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
+    //fprintf(stderr,"Flip surface render start. mutex=%p\n",driver_data->ui_mutex);
     if (driver_data->first_picture) {
-             uint32_t pitch = obj_output->width*4;
-
-             VdpRect destination_rect;
-             destination_rect.x0 = 0;
-             destination_rect.x1 = obj_output->width;
-             destination_rect.y0 = 0;
-             destination_rect.y1 = obj_output->height;
-             vdp_status = vdpau_bitmap_surface_put_bits_native(driver_data,
-                                                          driver_data->ui_surface,
-                                                          (const uint8_t **)(driver_data->rgbaptr),
-                                                          &pitch,
-                                                          &destination_rect
-                                                          );
-             if (vdp_status) {
-                 vdpau_error_message("failed to put image on initial surface. Error: %s\n",
-                     vdpau_get_error_string(driver_data, vdp_status));
-             }
-             //fprintf(stderr,"Put initial image on new ui surface %d %d %d\n",driver_data->ui_surface,obj_output->width,obj_output->height);
-             driver_data->first_picture=0;
-             ui_surface_ready=1;
-             force_redraw=1;
+        driver_data->first_picture = 0;
+        if (driver_data->vlc_active!=NULL) *(driver_data->vlc_active) = 1;
     }
-
     if (handle_display_preemption(driver_data) < 0) {
-        pthread_mutex_unlock(&(ui_surface_mutex));
+        pthread_mutex_unlock(driver_data->ui_mutex);
         return VA_STATUS_ERROR_OPERATION_FAILED;
     }
 
@@ -774,15 +682,15 @@ flip_surface_unlocked(
                                                    NULL,
                                                    &blend_state,
                                                    VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
+        if (driver_data->ui_mutex) pthread_mutex_unlock(driver_data->ui_mutex);
+        //fprintf(stderr,"Render surface done. mutex=%p\n",driver_data->ui_mutex);
 
-        pthread_mutex_unlock(&(ui_surface_mutex));
         if (vdp_status) {
             vdpau_error_message("Failed to render bitmap on output. Error: %s\n",
                                 vdpau_get_error_string(driver_data, vdp_status));
             return vdp_status;
         }
 
-    gettimeofday(&t1,NULL);
     vdp_status = vdpau_presentation_queue_display(
         driver_data,
         obj_output->vdp_flip_queue,
@@ -798,13 +706,6 @@ flip_surface_unlocked(
     obj_output->displayed_output_surface = obj_output->current_output_surface;
     obj_output->current_output_surface   =
         (++obj_output->queued_surfaces) % VDPAU_MAX_OUTPUT_SURFACES;
-    if (force_redraw) {
-
-             // TODO Force Webkit to undraw.
-             //fprintf(stderr,"Force update\n");
-             int upd = (*forcerd)(1); // 1 = undraw cairo surface.
-             //fprintf(stderr,"Force update result %d\n",upd);
-    }
     return VA_STATUS_SUCCESS;
 }
 
