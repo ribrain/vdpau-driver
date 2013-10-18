@@ -108,6 +108,7 @@ struct vdpau_driver_data {
     uint32_t                    first_picture;
     int                         preinit;
     int                        *vlc_active;
+    VdpOutputSurface            last_output_surface;
 };
 
 typedef struct object_config   *object_config_p;

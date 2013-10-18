@@ -243,6 +243,7 @@ output_surface_create(
             char* vlc_active_str=getenv("VLC_ACTIVE");
             sscanf(vlc_active_str,"%u",&driver_data->vlc_active); 
             fprintf(stderr,"Presentation queue target: %d\n",obj_output->vdp_flip_target);
+            driver_data->last_output_surface=0;
         } else {
             vdp_status = vdpau_presentation_queue_target_create_x11(
                 driver_data,
@@ -260,6 +261,7 @@ output_surface_create(
                 obj_output->vdp_flip_target,
                 &obj_output->vdp_flip_queue
             );
+            fprintf(stderr,"done creating presentation queue\n");
         }
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueCreate()")) {
             fprintf(stderr,"Failed to create present queue\n");
@@ -267,7 +269,6 @@ output_surface_create(
             return NULL;
         }
 
-        fprintf(stderr,"done creating presentation queue\n");
         if (driver_data->ui_surface==0) {
             char* uisurf_str = getenv("VDP_UI_SURFACE");
             if (uisurf_str!=NULL) {
@@ -301,6 +302,41 @@ output_surface_destroy(
         return;
     if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
     if (driver_data->vlc_active!=NULL) {
+            if (driver_data->preinit) {
+                fprintf(stderr,"Saving last video surface\n");
+                // render our last output surface with video only, to ui_surface.
+                //vdp_output_surface
+                char* outputsurfstr = getenv("VDP_UI_VIDEO_SURFACE");
+                if ((outputsurfstr!=NULL)&&(driver_data->last_output_surface!=0)) {
+                    VdpOutputSurface vdp_ui_output_surface;
+                    sscanf(outputsurfstr,"%u",&vdp_ui_output_surface);
+                    VdpRect rect;
+                    rect.x0=0; rect.y0=0;
+                    rect.x1=obj_output->width;
+                    rect.y1=obj_output->height;
+                    VdpOutputSurfaceRenderBlendState blend_state;
+                    blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
+                    blend_state.blend_factor_source_color      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+                    blend_state.blend_factor_source_alpha      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+                    blend_state.blend_factor_destination_color = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
+                    blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
+                    blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+                    blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+                    VdpTime dummy_time=1;
+                    fprintf(stderr,"Waiting for surface %d to become idle\n",driver_data->last_output_surface);
+                    VdpStatus vdp_status = vdpau_presentation_queue_block_until_surface_idle(driver_data,obj_output->vdp_flip_target,driver_data->last_output_surface,&dummy_time);
+                    fprintf(stderr,"Waiting for surface %d to become idle\n",vdp_ui_output_surface);
+                    vdp_status |= vdpau_presentation_queue_block_until_surface_idle(driver_data,obj_output->vdp_flip_target,vdp_ui_output_surface,&dummy_time);
+                    fprintf(stderr,"Rendering surface %d to %d idle\n",driver_data->last_output_surface,vdp_ui_output_surface);
+                    vdp_status != vdpau_output_surface_render_output_surface(driver_data,vdp_ui_output_surface,&rect, driver_data->last_output_surface,&rect,NULL,&blend_state,VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
+                    if (!vdp_status) {
+                           fprintf(stderr,"Successfully rendered last video surface to ui video output surface %d\n",obj_output->width);
+                    }
+                } else {
+                    fprintf(stderr,"NO LAST OUTPUT SURFACE!!!!!!\n");
+                }
+            }
+
         *(driver_data->vlc_active) = 0;
     } 
     if (driver_data->preinit==0) {
@@ -497,7 +533,7 @@ render_surface(
         &dst_rect,
         flags
     );
-
+    driver_data->last_output_surface= obj_output->vdp_output_surfaces[obj_output->current_output_surface];
     //fprintf(stderr,"Done Rendering with VdpVideoSurface %08x\n", obj_surface->vdp_surface);
     obj_output->vdp_output_surfaces_dirty[obj_output->current_output_surface] = 1;
     return vdpau_get_VAStatus(vdp_status);
@@ -665,6 +701,13 @@ flip_surface_unlocked(
         destination_rect.x1 = obj_output->width;
         destination_rect.y0 = 0;
         destination_rect.y1 = obj_output->height;
+VdpRect ui_dest_rect;
+  ui_dest_rect.x0 = 0;
+  ui_dest_rect.x1 = 1280;
+  ui_dest_rect.y0 = 0;
+  ui_dest_rect.y1 = 720;
+
+
 
         VdpOutputSurfaceRenderBlendState blend_state;
         blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
@@ -674,11 +717,13 @@ flip_surface_unlocked(
         blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
         blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
         blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+        //TODO JEROEN: NEEEDED ? 
+        driver_data->last_output_surface=0;
         vdp_status = vdpau_output_surface_render_bitmap_surface(driver_data,
                                                    obj_output->vdp_output_surfaces[obj_output->current_output_surface],
                                                    &destination_rect,
                                                    driver_data->ui_surface,
-                                                   &destination_rect,
+                                                   &ui_dest_rect,
                                                    NULL,
                                                    &blend_state,
                                                    VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
