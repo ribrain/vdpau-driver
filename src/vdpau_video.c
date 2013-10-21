@@ -400,7 +400,6 @@ vdpau_CreateSurfaces(
     if (format != VA_RT_FORMAT_YUV420)
         return VA_STATUS_ERROR_UNSUPPORTED_RT_FORMAT;
 
-    fprintf(stderr,"VDP Chroma type: %d\n",vdp_chroma_type);
     for (i = 0; i < num_surfaces; i++) {
         vdp_status = vdpau_video_surface_create(
             driver_data,

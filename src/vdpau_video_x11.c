@@ -201,7 +201,6 @@ output_surface_create(
     unsigned int         height
 )
 {
-    //fprintf(stderr,"Output surface create width %d height %d\n",width,height);
     VASurfaceID surface = object_heap_allocate(&driver_data->output_heap);
     if (surface == VA_INVALID_ID)
         return NULL;
@@ -235,15 +234,17 @@ output_surface_create(
     pthread_mutex_init(&obj_output->vdp_output_surfaces_lock, NULL);
     if (drawable != None) {
         VdpStatus vdp_status=VDP_STATUS_OK;
-        if (driver_data->preinit==1) {
+        if (driver_data->preinit) {
             char* vdp_target_str = getenv("VDP_TARGET");
             sscanf(vdp_target_str,"%u",&obj_output->vdp_flip_target);
             char* vdp_queue_str = getenv("VDP_QUEUE");
             sscanf(vdp_queue_str,"%u",&obj_output->vdp_flip_queue);
             char* vlc_active_str=getenv("VLC_ACTIVE");
-            sscanf(vlc_active_str,"%u",&driver_data->vlc_active); 
-            fprintf(stderr,"Presentation queue target: %d\n",obj_output->vdp_flip_target);
-            driver_data->last_output_surface=0;
+            sscanf(vlc_active_str,"%u",&driver_data->vlc_active);
+            driver_data->last_vdp_surface=NULL;
+            driver_data->screen_width=width;
+            driver_data->screen_height=height;
+
         } else {
             vdp_status = vdpau_presentation_queue_target_create_x11(
                 driver_data,
@@ -261,7 +262,6 @@ output_surface_create(
                 obj_output->vdp_flip_target,
                 &obj_output->vdp_flip_queue
             );
-            fprintf(stderr,"done creating presentation queue\n");
         }
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueCreate()")) {
             fprintf(stderr,"Failed to create present queue\n");
@@ -269,14 +269,6 @@ output_surface_create(
             return NULL;
         }
 
-        if (driver_data->ui_surface==0) {
-            char* uisurf_str = getenv("VDP_UI_SURFACE");
-            if (uisurf_str!=NULL) {
-            sscanf(uisurf_str,"%u",&(driver_data->ui_surface));
-            char* uimutex_str = getenv("VDP_UI_MUTEX");
-            sscanf(uimutex_str,"%u",&(driver_data->ui_mutex));
-            }
-        }
         /* {0, 0, 0, 0} make transparent */
         VdpColor vdp_bg = {0.01, 0.02, 0.03, 0};
         vdp_status = vdpau_presentation_queue_set_background_color(
@@ -302,41 +294,6 @@ output_surface_destroy(
         return;
     if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
     if (driver_data->vlc_active!=NULL) {
-            if (driver_data->preinit) {
-                fprintf(stderr,"Saving last video surface\n");
-                // render our last output surface with video only, to ui_surface.
-                //vdp_output_surface
-                char* outputsurfstr = getenv("VDP_UI_VIDEO_SURFACE");
-                if ((outputsurfstr!=NULL)&&(driver_data->last_output_surface!=0)) {
-                    VdpOutputSurface vdp_ui_output_surface;
-                    sscanf(outputsurfstr,"%u",&vdp_ui_output_surface);
-                    VdpRect rect;
-                    rect.x0=0; rect.y0=0;
-                    rect.x1=obj_output->width;
-                    rect.y1=obj_output->height;
-                    VdpOutputSurfaceRenderBlendState blend_state;
-                    blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
-                    blend_state.blend_factor_source_color      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
-                    blend_state.blend_factor_source_alpha      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
-                    blend_state.blend_factor_destination_color = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
-                    blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
-                    blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
-                    blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
-                    VdpTime dummy_time=1;
-                    fprintf(stderr,"Waiting for surface %d to become idle\n",driver_data->last_output_surface);
-                    VdpStatus vdp_status = vdpau_presentation_queue_block_until_surface_idle(driver_data,obj_output->vdp_flip_target,driver_data->last_output_surface,&dummy_time);
-                    fprintf(stderr,"Waiting for surface %d to become idle\n",vdp_ui_output_surface);
-                    vdp_status |= vdpau_presentation_queue_block_until_surface_idle(driver_data,obj_output->vdp_flip_target,vdp_ui_output_surface,&dummy_time);
-                    fprintf(stderr,"Rendering surface %d to %d idle\n",driver_data->last_output_surface,vdp_ui_output_surface);
-                    vdp_status != vdpau_output_surface_render_output_surface(driver_data,vdp_ui_output_surface,&rect, driver_data->last_output_surface,&rect,NULL,&blend_state,VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
-                    if (!vdp_status) {
-                           fprintf(stderr,"Successfully rendered last video surface to ui video output surface %d\n",obj_output->width);
-                    }
-                } else {
-                    fprintf(stderr,"NO LAST OUTPUT SURFACE!!!!!!\n");
-                }
-            }
-
         *(driver_data->vlc_active) = 0;
     } 
     if (driver_data->preinit==0) {
@@ -365,7 +322,7 @@ output_surface_destroy(
         }
     }
 
-     if (driver_data->ui_mutex) pthread_mutex_unlock(driver_data->ui_mutex);
+    if (driver_data->ui_mutex) pthread_mutex_unlock(driver_data->ui_mutex);
     
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
@@ -510,6 +467,15 @@ render_surface(
     dst_rect.y1 = target_rect->y + target_rect->height;
     ensure_bounds(&dst_rect, obj_output->width, obj_output->height);
 
+    VdpOutputSurfaceRenderBlendState blend_state;
+    blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
+    blend_state.blend_factor_source_color      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+    blend_state.blend_factor_source_alpha      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+    blend_state.blend_factor_destination_color = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
+    blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
+    blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+    blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+
     VdpOutputSurface vdp_background = VDP_INVALID_HANDLE;
     if (!obj_output->size_changed && obj_output->queued_surfaces > 0) {
         int background_surface;
@@ -519,10 +485,6 @@ render_surface(
     }
 
     VdpStatus vdp_status;
-    //fprintf(stderr,"Begin Rendering with VdpVideoSurface %08x\n", obj_surface->vdp_surface);
-    struct timeval t1;
-    gettimeofday(&t1,NULL);
-    //fprintf(stderr,"Render request %d.%06d surface %d\n",t1.tv_sec,t1.tv_usec, obj_surface->vdp_surface);
     vdp_status = video_mixer_render(
         driver_data,
         obj_surface->video_mixer,
@@ -533,8 +495,6 @@ render_surface(
         &dst_rect,
         flags
     );
-    driver_data->last_output_surface= obj_output->vdp_output_surfaces[obj_output->current_output_surface];
-    //fprintf(stderr,"Done Rendering with VdpVideoSurface %08x\n", obj_surface->vdp_surface);
     obj_output->vdp_output_surfaces_dirty[obj_output->current_output_surface] = 1;
     return vdpau_get_VAStatus(vdp_status);
 }
@@ -686,7 +646,6 @@ flip_surface_unlocked(
 {
     VdpStatus vdp_status=0;
     if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
-    //fprintf(stderr,"Flip surface render start. mutex=%p\n",driver_data->ui_mutex);
     if (driver_data->first_picture) {
         driver_data->first_picture = 0;
         if (driver_data->vlc_active!=NULL) *(driver_data->vlc_active) = 1;
@@ -701,13 +660,11 @@ flip_surface_unlocked(
         destination_rect.x1 = obj_output->width;
         destination_rect.y0 = 0;
         destination_rect.y1 = obj_output->height;
-VdpRect ui_dest_rect;
-  ui_dest_rect.x0 = 0;
-  ui_dest_rect.x1 = 1280;
-  ui_dest_rect.y0 = 0;
-  ui_dest_rect.y1 = 720;
-
-
+        VdpRect ui_dest_rect;
+        ui_dest_rect.x0 = 0;
+        ui_dest_rect.x1 = 1280;
+        ui_dest_rect.y0 = 0;
+        ui_dest_rect.y1 = 720;
 
         VdpOutputSurfaceRenderBlendState blend_state;
         blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
@@ -717,8 +674,6 @@ VdpRect ui_dest_rect;
         blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
         blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
         blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
-        //TODO JEROEN: NEEEDED ? 
-        driver_data->last_output_surface=0;
         vdp_status = vdpau_output_surface_render_bitmap_surface(driver_data,
                                                    obj_output->vdp_output_surfaces[obj_output->current_output_surface],
                                                    &destination_rect,
@@ -728,7 +683,6 @@ VdpRect ui_dest_rect;
                                                    &blend_state,
                                                    VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
         if (driver_data->ui_mutex) pthread_mutex_unlock(driver_data->ui_mutex);
-        //fprintf(stderr,"Render surface done. mutex=%p\n",driver_data->ui_mutex);
 
         if (vdp_status) {
             vdpau_error_message("Failed to render bitmap on output. Error: %s\n",

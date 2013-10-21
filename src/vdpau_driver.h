@@ -77,6 +77,14 @@ typedef enum {
     VDP_IMPLEMENTATION_NVIDIA = 1,
 } VdpImplementation;
 
+typedef struct object_config   *object_config_p;
+typedef struct object_context  *object_context_p;
+typedef struct object_surface  *object_surface_p;
+typedef struct object_buffer   *object_buffer_p;
+typedef struct object_output   *object_output_p;
+typedef struct object_image    *object_image_p;
+typedef struct object_mixer    *object_mixer_p;
+
 typedef struct vdpau_driver_data vdpau_driver_data_t;
 struct vdpau_driver_data {
     VADriverContextP            va_context;
@@ -103,21 +111,17 @@ struct vdpau_driver_data {
     unsigned int                va_display_attrs_count;
     char                        va_vendor[256];
     unsigned int                is_preempted;
+
     VdpOutputSurface            ui_surface;
+    VdpOutputSurface            vid_surface;
     pthread_mutex_t            *ui_mutex;
     uint32_t                    first_picture;
     int                         preinit;
     int                        *vlc_active;
-    VdpOutputSurface            last_output_surface;
+    object_surface_p            last_vdp_surface;
+    int                         screen_width;
+    int                         screen_height;
 };
-
-typedef struct object_config   *object_config_p;
-typedef struct object_context  *object_context_p;
-typedef struct object_surface  *object_surface_p;
-typedef struct object_buffer   *object_buffer_p;
-typedef struct object_output   *object_output_p;
-typedef struct object_image    *object_image_p;
-typedef struct object_mixer    *object_mixer_p;
 
 // Set display type
 int vdpau_set_display_type(vdpau_driver_data_t *driver_data, unsigned int type)

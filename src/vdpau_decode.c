@@ -1295,7 +1295,10 @@ vdpau_EndPicture(
             obj_context->vdp_bitstream_buffers_count,
             obj_context->vdp_bitstream_buffers
         );
-	}
+        if (!vdp_status) {
+             driver_data->last_vdp_surface=obj_surface;
+        }
+    }
     va_status = vdpau_get_VAStatus(vdp_status);
 
     /* XXX: assume we are done with rendering right away */

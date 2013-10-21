@@ -312,7 +312,31 @@ vdpau_DestroyImage(
 )
 {
     VDPAU_DRIVER_DATA_INIT;
+    if (driver_data->last_vdp_surface!=NULL) {
+       
+        //fprintf(stderr,"Shutdown detected. Rendering last decoded video frame to vid_surface\n");
 
+        if (driver_data->last_vdp_surface!=0) {
+            VdpRect dest;
+            dest.x0=0;
+            dest.x1=driver_data->screen_width;
+            dest.y0=0;
+            dest.y1=driver_data->screen_height;
+            VdpStatus vdp_status = video_mixer_render(
+                driver_data,
+                driver_data->last_vdp_surface->video_mixer,
+                driver_data->last_vdp_surface,
+                VDP_INVALID_HANDLE,
+                driver_data->vid_surface,
+                NULL,
+                &dest,
+		1	
+                );
+        }
+        driver_data->last_vdp_surface=NULL;
+    }
+
+    fprintf(stderr,"Destroy image\n");
     object_image_p obj_image = VDPAU_IMAGE(image_id);
     if (!obj_image)
         return VA_STATUS_ERROR_INVALID_IMAGE;

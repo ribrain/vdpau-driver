@@ -209,7 +209,6 @@ vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
     char* vdp_dpy_str = getenv("VDP_DPY");
     if (vdp_dpy_str!=NULL) {
         sscanf(vdp_dpy_str,"%u",&driver_data->vdp_dpy);
-        fprintf (stderr,"VDP DPY: %d\n",driver_data->vdp_dpy);
         if (!driver_data->vdp_dpy)
             return VA_STATUS_ERROR_UNKNOWN;
 
@@ -218,9 +217,18 @@ vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
         sscanf(vdp_device_str,"%u",&driver_data->vdp_device);
         char* vdp_getproc_str = getenv("VDP_GET_PROC");
         sscanf(vdp_getproc_str,"%u",&driver_data->vdp_get_proc_address);
+        char* uisurf_str = getenv("VDP_UI_SURFACE");
+        if (uisurf_str!=NULL) {
+            sscanf(uisurf_str,"%u",&(driver_data->ui_surface));
+            char* uimutex_str = getenv("VDP_UI_MUTEX");
+            sscanf(uimutex_str,"%u",&(driver_data->ui_mutex));
+        }
+        char* visurf_str = getenv("VDP_VID_SURFACE");
+        if (visurf_str!=NULL) {
+            sscanf(visurf_str,"%u",&(driver_data->vid_surface));
+        }
         driver_data->preinit=1;
         driver_data->first_picture=1;
-        driver_data->ui_surface=0;
     } else {
         driver_data->vdp_dpy = XOpenDisplay(x11_dpy_name);
         vdp_status = vdp_device_create_x11(
