@@ -60,7 +60,7 @@ object_heap_expand(object_heap_p heap)
     void *new_heap_index;
     int next_free;
     int new_heap_size = heap->heap_size + heap->heap_increment;
-    int bucket_index = new_heap_size / heap->heap_increment - 1;
+    int bucket_index = heap->heap_increment > 0 ? (new_heap_size / heap->heap_increment - 1) : 0;
 
     if (bucket_index >= heap->num_buckets) {
         int new_num_buckets = heap->num_buckets + 8;
@@ -127,8 +127,8 @@ object_heap_allocate_unlocked(object_heap_p heap)
     }
     ASSERT(heap->next_free >= 0);
 
-    bucket_index = heap->next_free / heap->heap_increment;
-    obj_index = heap->next_free % heap->heap_increment;
+    bucket_index = heap->heap_increment > 0 ? (heap->next_free / heap->heap_increment) : 0;
+    obj_index = heap->heap_increment > 0 ? (heap->next_free % heap->heap_increment) : 0;
 
     obj = (object_base_p)(heap->bucket[bucket_index] + obj_index * heap->object_size);
     heap->next_free = obj->next_free;
@@ -161,8 +161,8 @@ object_heap_lookup_unlocked(object_heap_p heap, int id)
         return NULL;
     }
     id &= OBJECT_HEAP_ID_MASK;
-    bucket_index = id / heap->heap_increment;
-    obj_index = id % heap->heap_increment;
+    bucket_index = heap->heap_increment > 0 ? (id / heap->heap_increment) : 0;
+    obj_index = heap->heap_increment > 0 ? (id % heap->heap_increment) : 0;
     obj = (object_base_p)(heap->bucket[bucket_index] + obj_index * heap->object_size);
 
     /* Check if the object has in fact been allocated */
@@ -206,8 +206,8 @@ object_heap_next_unlocked(object_heap_p heap, object_heap_iterator *iter)
     int i = *iter + 1;
 
     while (i < heap->heap_size) {
-        bucket_index = i / heap->heap_increment;
-        obj_index = i % heap->heap_increment;
+        bucket_index = heap->heap_increment > 0 ? (i / heap->heap_increment) : 0;
+        obj_index = heap->heap_increment > 0 ? (i % heap->heap_increment) : 0;
 
         obj = (object_base_p)(heap->bucket[bucket_index] + obj_index * heap->object_size);
         if (obj->next_free == ALLOCATED) {
@@ -266,14 +266,16 @@ object_heap_destroy(object_heap_p heap)
     /* Check if heap is empty */
     for (i = 0; i < heap->heap_size; i++) {
         /* Check if object is not still allocated */
-        bucket_index = i / heap->heap_increment;
-        obj_index = i % heap->heap_increment;
+        bucket_index = heap->heap_increment > 0 ? (i / heap->heap_increment) : 0;
+        obj_index = heap->heap_increment > 0 ? (i % heap->heap_increment) : 0;
         obj = (object_base_p)(heap->bucket[bucket_index] + obj_index * heap->object_size);
         ASSERT(obj->next_free != ALLOCATED);
     }
 
-    for (i = 0; i < heap->heap_size / heap->heap_increment; i++) {
-        free(heap->bucket[i]);
+    if (heap->heap_increment > 0 ) {
+        for (i = 0; i < heap->heap_size / heap->heap_increment; i++) {
+            free(heap->bucket[i]);
+        }
     }
 
     pthread_mutex_destroy(&heap->mutex);
