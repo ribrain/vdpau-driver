@@ -655,6 +655,7 @@ flip_surface_unlocked(
         return VA_STATUS_ERROR_OPERATION_FAILED;
     }
 
+    if (driver_data->ui_surface!=0) {
         VdpRect destination_rect;
         destination_rect.x0 = 0;
         destination_rect.x1 = obj_output->width;
@@ -689,7 +690,7 @@ flip_surface_unlocked(
                                 vdpau_get_error_string(driver_data, vdp_status));
             return vdp_status;
         }
-
+    }
     vdp_status = vdpau_presentation_queue_display(
         driver_data,
         obj_output->vdp_flip_queue,

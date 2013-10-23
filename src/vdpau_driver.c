@@ -240,6 +240,7 @@ vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
         if (vdp_status != VDP_STATUS_OK)
             return VA_STATUS_ERROR_UNKNOWN;
         driver_data->preinit=0;
+        driver_data->ui_surface=0;
     } 
     driver_data->ui_mutex=NULL;
     if (vdpau_gate_init(driver_data) < 0)
