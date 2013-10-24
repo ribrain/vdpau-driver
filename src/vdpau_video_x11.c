@@ -25,6 +25,15 @@
 #include "vdpau_mixer.h"
 #include "utils.h"
 #include "utils_x11.h"
+#include "stdio.h"
+#include "sys/time.h"
+
+#include <errno.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <xcb/composite.h>
+#include <xcb/xcb.h>
+#include <xcb/xcb_image.h>
 
 #define DEBUG 1
 #include "debug.h"
@@ -217,34 +226,45 @@ output_surface_create(
 
     if (drawable != None)
         obj_output->is_window = is_window(driver_data->x11_dpy, drawable);
-
     unsigned int i;
     for (i = 0; i < VDPAU_MAX_OUTPUT_SURFACES; i++) {
         obj_output->vdp_output_surfaces[i] = VDP_INVALID_HANDLE;
         obj_output->vdp_output_surfaces_dirty[i] = 0;
     }
     pthread_mutex_init(&obj_output->vdp_output_surfaces_lock, NULL);
-
     if (drawable != None) {
-        VdpStatus vdp_status;
-        vdp_status = vdpau_presentation_queue_target_create_x11(
-            driver_data,
-            driver_data->vdp_device,
-            obj_output->drawable,
-            &obj_output->vdp_flip_target
-        );
-        if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueTargetCreateX115)")) {
-            output_surface_destroy(driver_data, obj_output);
-            return NULL;
-        }
+        VdpStatus vdp_status=VDP_STATUS_OK;
+        if (driver_data->preinit) {
+            char* vdp_target_str = getenv("VDP_TARGET");
+            sscanf(vdp_target_str,"%u",&obj_output->vdp_flip_target);
+            char* vdp_queue_str = getenv("VDP_QUEUE");
+            sscanf(vdp_queue_str,"%u",&obj_output->vdp_flip_queue);
+            char* vlc_active_str=getenv("VLC_ACTIVE");
+            sscanf(vlc_active_str,"%u",&driver_data->vlc_active);
+            driver_data->last_vdp_surface=NULL;
+            driver_data->screen_width=width;
+            driver_data->screen_height=height;
 
-        vdp_status = vdpau_presentation_queue_create(
-            driver_data,
-            driver_data->vdp_device,
-            obj_output->vdp_flip_target,
-            &obj_output->vdp_flip_queue
-        );
+        } else {
+            vdp_status = vdpau_presentation_queue_target_create_x11(
+                driver_data,
+                driver_data->vdp_device,
+                obj_output->drawable,
+                &obj_output->vdp_flip_target
+            );
+            if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueTargetCreateX115)")) {
+                output_surface_destroy(driver_data, obj_output);
+                return NULL;
+            }
+            vdp_status = vdpau_presentation_queue_create(
+                driver_data,
+                driver_data->vdp_device,
+                obj_output->vdp_flip_target,
+                &obj_output->vdp_flip_queue
+            );
+        }
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueCreate()")) {
+            fprintf(stderr,"Failed to create present queue\n");
             output_surface_destroy(driver_data, obj_output);
             return NULL;
         }
@@ -255,7 +275,7 @@ output_surface_create(
                     driver_data,
                     obj_output->vdp_flip_queue,
                     &vdp_bg
-        );
+        ); 
         if (!VDPAU_CHECK_STATUS(vdp_status, "obj_output->vdp_flip_queue()")) {
             /* NOTE: this is not a fatal error, so continue anyway */
         }
@@ -272,23 +292,26 @@ output_surface_destroy(
 {
     if (!obj_output)
         return;
-
-    if (obj_output->vdp_flip_queue != VDP_INVALID_HANDLE) {
-        vdpau_presentation_queue_destroy(
-            driver_data,
-            obj_output->vdp_flip_queue
-        );
-        obj_output->vdp_flip_queue = VDP_INVALID_HANDLE;
+    if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
+    if (driver_data->vlc_active!=NULL) {
+        *(driver_data->vlc_active) = 0;
+    } 
+    if (driver_data->preinit==0) {
+        if (obj_output->vdp_flip_queue != VDP_INVALID_HANDLE) {
+            vdpau_presentation_queue_destroy(
+                driver_data,
+                obj_output->vdp_flip_queue
+            );
+            obj_output->vdp_flip_queue = VDP_INVALID_HANDLE;
+        }
+        if (obj_output->vdp_flip_target != VDP_INVALID_HANDLE) {
+            vdpau_presentation_queue_target_destroy(
+                driver_data,
+                obj_output->vdp_flip_target
+            );
+            obj_output->vdp_flip_target = VDP_INVALID_HANDLE;
+        }
     }
-
-    if (obj_output->vdp_flip_target != VDP_INVALID_HANDLE) {
-        vdpau_presentation_queue_target_destroy(
-            driver_data,
-            obj_output->vdp_flip_target
-        );
-        obj_output->vdp_flip_target = VDP_INVALID_HANDLE;
-    }
-
     unsigned int i;
     for (i = 0; i < VDPAU_MAX_OUTPUT_SURFACES; i++) {
         VdpOutputSurface vdp_output_surface;
@@ -299,8 +322,11 @@ output_surface_destroy(
         }
     }
 
+    if (driver_data->ui_mutex) pthread_mutex_unlock(driver_data->ui_mutex);
+    
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
+    vdpau_information_message("BAHLU: Done destroying. \n");
 }
 
 // Reference output surface
@@ -420,8 +446,8 @@ ensure_bounds(VdpRect *rect, unsigned int width, unsigned int height)
 VAStatus
 render_surface(
     vdpau_driver_data_t *driver_data,
-    object_surface_p     obj_surface,
-    object_output_p      obj_output,
+    object_surface_p     obj_surface, 
+    object_output_p      obj_output, // render on one of the surfaces here
     const VARectangle   *source_rect,
     const VARectangle   *target_rect,
     unsigned int         flags
@@ -440,6 +466,15 @@ render_surface(
     dst_rect.x1 = target_rect->x + target_rect->width;
     dst_rect.y1 = target_rect->y + target_rect->height;
     ensure_bounds(&dst_rect, obj_output->width, obj_output->height);
+
+    VdpOutputSurfaceRenderBlendState blend_state;
+    blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
+    blend_state.blend_factor_source_color      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+    blend_state.blend_factor_source_alpha      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+    blend_state.blend_factor_destination_color = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
+    blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
+    blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+    blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
 
     VdpOutputSurface vdp_background = VDP_INVALID_HANDLE;
     if (!obj_output->size_changed && obj_output->queued_surfaces > 0) {
@@ -602,7 +637,6 @@ render_subpictures(
     }
     return VA_STATUS_SUCCESS;
 }
-
 // Queue surface for display
 static VAStatus
 flip_surface_unlocked(
@@ -610,20 +644,64 @@ flip_surface_unlocked(
     object_output_p      obj_output
 )
 {
-    if (handle_display_preemption(driver_data) < 0)
+    VdpStatus vdp_status=0;
+    if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
+    if (driver_data->first_picture) {
+        driver_data->first_picture = 0;
+        if (driver_data->vlc_active!=NULL) *(driver_data->vlc_active) = 1;
+    }
+    if (handle_display_preemption(driver_data) < 0) {
+        pthread_mutex_unlock(driver_data->ui_mutex);
         return VA_STATUS_ERROR_OPERATION_FAILED;
+    }
 
-    VdpStatus vdp_status;
+    if (driver_data->ui_surface!=0) {
+        VdpRect destination_rect;
+        destination_rect.x0 = 0;
+        destination_rect.x1 = obj_output->width;
+        destination_rect.y0 = 0;
+        destination_rect.y1 = obj_output->height;
+        VdpRect ui_dest_rect;
+        ui_dest_rect.x0 = 0;
+        ui_dest_rect.x1 = 1280;
+        ui_dest_rect.y0 = 0;
+        ui_dest_rect.y1 = 720;
+
+        VdpOutputSurfaceRenderBlendState blend_state;
+        blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
+        blend_state.blend_factor_source_color      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
+        blend_state.blend_factor_source_alpha      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+        blend_state.blend_factor_destination_color = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
+        blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+        blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+        vdp_status = vdpau_output_surface_render_bitmap_surface(driver_data,
+                                                   obj_output->vdp_output_surfaces[obj_output->current_output_surface],
+                                                   &destination_rect,
+                                                   driver_data->ui_surface,
+                                                   &ui_dest_rect,
+                                                   NULL,
+                                                   &blend_state,
+                                                   VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
+        if (driver_data->ui_mutex) pthread_mutex_unlock(driver_data->ui_mutex);
+
+        if (vdp_status) {
+            vdpau_error_message("Failed to render bitmap on output. Error: %s\n",
+                                vdpau_get_error_string(driver_data, vdp_status));
+            return vdp_status;
+        }
+    }
     vdp_status = vdpau_presentation_queue_display(
         driver_data,
         obj_output->vdp_flip_queue,
         obj_output->vdp_output_surfaces[obj_output->current_output_surface],
         obj_output->width,
         obj_output->height,
-        0
+        0 /*driver_data->pts */
     );
     if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueDisplay()"))
         return vdpau_get_VAStatus(vdp_status);
+
 
     obj_output->displayed_output_surface = obj_output->current_output_surface;
     obj_output->current_output_surface   =
@@ -638,10 +716,11 @@ queue_surface_unlocked(
     object_output_p      obj_output
 )
 {
-    obj_surface->va_surface_status       = VASurfaceDisplaying;
+    int result = flip_surface_unlocked(driver_data, obj_output);
+    obj_surface->va_surface_status       = VASurfaceReady;
     obj_output->fields                   = 0;
+    return result;
 
-    return flip_surface_unlocked(driver_data, obj_output);
 }
 
 VAStatus
@@ -658,7 +737,6 @@ queue_surface(
     output_surface_unlock(obj_output);
     return va_status;
 }
-
 // Render surface to a Drawable
 static VAStatus
 put_surface_unlocked(
@@ -672,20 +750,22 @@ put_surface_unlocked(
 {
     VdpStatus vdp_status;
     VAStatus va_status;
-
     obj_surface->va_surface_status = VASurfaceReady;
 
     /* Wait for the output surface to be ready.
        i.e. it completed the previous rendering */
     if (obj_output->vdp_output_surfaces[obj_output->current_output_surface] != VDP_INVALID_HANDLE &&
         obj_output->vdp_output_surfaces_dirty[obj_output->current_output_surface]) {
-        VdpTime dummy_time;
+
+        VdpTime dummy_time=1;
         vdp_status = vdpau_presentation_queue_block_until_surface_idle(
             driver_data,
             obj_output->vdp_flip_queue,
             obj_output->vdp_output_surfaces[obj_output->current_output_surface],
             &dummy_time
         );
+        if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueBlockUntilSurfaceIdle()"))
+            return vdpau_get_VAStatus(vdp_status);
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueBlockUntilSurfaceIdle()"))
             return vdpau_get_VAStatus(vdp_status);
     }
@@ -781,11 +861,11 @@ put_surface(
         drawable_width,
         drawable_height
     );
-    output_surface_unlock(obj_output);
+    //output_surface_unlock(obj_output);
     if (status < 0)
         return VA_STATUS_ERROR_OPERATION_FAILED;
 
-    output_surface_lock(obj_output);
+    //output_surface_lock(obj_output);
     va_status = put_surface_unlocked(
         driver_data,
         obj_surface,

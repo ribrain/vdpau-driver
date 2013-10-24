@@ -184,16 +184,17 @@ vdpau_common_Terminate(vdpau_driver_data_t *driver_data)
     if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPreemptioCallbackRegister()")) {
         /* NOTE: not a fatal error. */
     }
+    if (driver_data->preinit==0) {
+        if (driver_data->vdp_device != VDP_INVALID_HANDLE) {
+            vdpau_device_destroy(driver_data, driver_data->vdp_device);
+            driver_data->vdp_device = VDP_INVALID_HANDLE;
+        }
+        vdpau_gate_exit(driver_data);
 
-    if (driver_data->vdp_device != VDP_INVALID_HANDLE) {
-        vdpau_device_destroy(driver_data, driver_data->vdp_device);
-        driver_data->vdp_device = VDP_INVALID_HANDLE;
-    }
-    vdpau_gate_exit(driver_data);
-
-    if (driver_data->vdp_dpy) {
-        XCloseDisplay(driver_data->vdp_dpy);
-        driver_data->vdp_dpy = NULL;
+        if (driver_data->vdp_dpy) {
+            XCloseDisplay(driver_data->vdp_dpy);
+            driver_data->vdp_dpy = NULL;
+        }
     }
 }
 
@@ -202,22 +203,46 @@ static VAStatus
 vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
 {
     /* Create a dedicated X11 display for VDPAU purposes */
-    const char * const x11_dpy_name = XDisplayString(driver_data->x11_dpy);
-    driver_data->vdp_dpy = XOpenDisplay(x11_dpy_name);
-    if (!driver_data->vdp_dpy)
-        return VA_STATUS_ERROR_UNKNOWN;
-
     VdpStatus vdp_status;
-    driver_data->vdp_device = VDP_INVALID_HANDLE;
-    vdp_status = vdp_device_create_x11(
-        driver_data->vdp_dpy,
-        driver_data->x11_screen,
-        &driver_data->vdp_device,
-        &driver_data->vdp_get_proc_address
-    );
-    if (vdp_status != VDP_STATUS_OK)
-        return VA_STATUS_ERROR_UNKNOWN;
 
+    const char * const x11_dpy_name = XDisplayString(driver_data->x11_dpy);
+    char* vdp_dpy_str = getenv("VDP_DPY");
+    if (vdp_dpy_str!=NULL) {
+        sscanf(vdp_dpy_str,"%u",&driver_data->vdp_dpy);
+        if (!driver_data->vdp_dpy)
+            return VA_STATUS_ERROR_UNKNOWN;
+
+        driver_data->vdp_device = VDP_INVALID_HANDLE;
+        char* vdp_device_str = getenv("VDP_DEVICE");
+        sscanf(vdp_device_str,"%u",&driver_data->vdp_device);
+        char* vdp_getproc_str = getenv("VDP_GET_PROC");
+        sscanf(vdp_getproc_str,"%u",&driver_data->vdp_get_proc_address);
+        char* uisurf_str = getenv("VDP_UI_SURFACE");
+        if (uisurf_str!=NULL) {
+            sscanf(uisurf_str,"%u",&(driver_data->ui_surface));
+            char* uimutex_str = getenv("VDP_UI_MUTEX");
+            sscanf(uimutex_str,"%u",&(driver_data->ui_mutex));
+        }
+        char* visurf_str = getenv("VDP_VID_SURFACE");
+        if (visurf_str!=NULL) {
+            sscanf(visurf_str,"%u",&(driver_data->vid_surface));
+        }
+        driver_data->preinit=1;
+        driver_data->first_picture=1;
+    } else {
+        driver_data->vdp_dpy = XOpenDisplay(x11_dpy_name);
+        vdp_status = vdp_device_create_x11(
+            driver_data->vdp_dpy,
+            driver_data->x11_screen,
+            &driver_data->vdp_device,
+            &driver_data->vdp_get_proc_address
+        );
+        if (vdp_status != VDP_STATUS_OK)
+            return VA_STATUS_ERROR_UNKNOWN;
+        driver_data->preinit=0;
+        driver_data->ui_surface=0;
+    } 
+    driver_data->ui_mutex=NULL;
     if (vdpau_gate_init(driver_data) < 0)
         return VA_STATUS_ERROR_UNKNOWN;
 
