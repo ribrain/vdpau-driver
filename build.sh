@@ -21,7 +21,7 @@ ln -s libvdpau.so.* libvdpau.so
 
 cd $BUILDDIR
 # reconfigure using host version. host-autotools break because of hard-coded paths
-PATH=/usr/bin autoreconf -v --install
+PATH=/bin:/usr/bin autoreconf -v --install
 CFLAGS="-I$PREFIX/usr/include" LDFLAGS="-L$PREFIX/usr/lib" ./configure --prefix=/usr || exit 1
 make || exit 1
 make install DESTDIR=$PREFIX
