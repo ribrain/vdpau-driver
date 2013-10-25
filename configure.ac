@@ -192,7 +192,7 @@ AC_CACHE_CHECK([for VDPAU/MPEG-4 support],
 AC_DEFINE_UNQUOTED(HAVE_VDPAU_MPEG4, [$HAVE_VDPAU_MPEG4], [VDPAU/MPEG-4 support])
 
 dnl Check for VDPAU version (poor man's check, no pkgconfig joy)
-VDPAU_VERSION=`cat << EOF | $CC -E - | grep ^vdpau_version | cut -d' ' -f2
+VDPAU_VERSION=`cat << EOF | $CC $CFLAGS -E - | grep ^vdpau_version | cut -d' ' -f2
 #include <vdpau/vdpau.h>
 vdpau_version VDPAU_VERSION
 EOF
