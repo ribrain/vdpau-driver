@@ -2,6 +2,7 @@
 
 BUILDDIR=`pwd`
 PREFIX=`pwd`/prefix
+TARGET=`pwd`/target
 
 if [ ! -e build.env ]; then echo "Build environment not configured, run setup-build.sh"; exit 1; fi
 
@@ -26,6 +27,7 @@ CFLAGS="-I$PREFIX/usr/include" LDFLAGS="-L$PREFIX/usr/lib" ./configure --prefix=
 make || exit 1
 make install DESTDIR=$PREFIX
 
+mkdir -p $TARGET
 cd $PREFIX
 tar cfpz $TARGET/libva-vdpau-driver.tar.gz `cat $BUILDDIR/tar-filelist.txt`
 
