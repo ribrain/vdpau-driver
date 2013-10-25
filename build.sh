@@ -26,9 +26,9 @@ CFLAGS="-I$PREFIX/usr/include" LDFLAGS="-L$PREFIX/usr/lib" ./configure --prefix=
 make || exit 1
 make install DESTDIR=$PREFIX
 
+cd $PREFIX
+tar cfpz $TARGET/libva-vdpau-driver.tar.gz `cat $BUILDDIR/tar-filelist.txt`
+
 cd $BUILDDIR
-mkdir -p target
-#TODO: create rootfs filesystem tarball in target/ (/usr/lib, etc)
-cp $PREFIX/usr/lib/dri/vdpau_drv_video.so target
-echo Build result:
+echo "Build result:"
 ls -l  target
