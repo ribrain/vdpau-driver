@@ -242,8 +242,10 @@ output_surface_create(
             char* vlc_active_str=getenv("VLC_ACTIVE");
             sscanf(vlc_active_str,"%u",&driver_data->vlc_active);
             driver_data->last_vdp_surface=NULL;
-            driver_data->screen_width=width;
-            driver_data->screen_height=height;
+            driver_data->video_rect.x0=0;
+            driver_data->video_rect.y0=0;
+            driver_data->video_rect.x1=0;
+            driver_data->video_rect.y1=0;
 
         } else {
             vdp_status = vdpau_presentation_queue_target_create_x11(
@@ -460,12 +462,12 @@ render_surface(
     src_rect.y1 = source_rect->y + source_rect->height;
     ensure_bounds(&src_rect, obj_surface->width, obj_surface->height);   
 
-    VdpRect dst_rect;
-    dst_rect.x0 = target_rect->x;
-    dst_rect.y0 = target_rect->y;
-    dst_rect.x1 = target_rect->x + target_rect->width;
-    dst_rect.y1 = target_rect->y + target_rect->height;
-    ensure_bounds(&dst_rect, obj_output->width, obj_output->height);
+    VdpRect dst_rect = driver_data->video_rect;
+    driver_data->video_rect.x0 = target_rect->x;
+    driver_data->video_rect.y0 = target_rect->y;
+    driver_data->video_rect.x1 = target_rect->x + target_rect->width;
+    driver_data->video_rect.y1 = target_rect->y + target_rect->height;
+    ensure_bounds(&driver_data->video_rect, obj_output->width, obj_output->height);
 
     VdpOutputSurfaceRenderBlendState blend_state;
     blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
@@ -492,7 +494,7 @@ render_surface(
         vdp_background,
         obj_output->vdp_output_surfaces[obj_output->current_output_surface],
         &src_rect,
-        &dst_rect,
+        &driver_data->video_rect,
         flags
     );
     obj_output->vdp_output_surfaces_dirty[obj_output->current_output_surface] = 1;

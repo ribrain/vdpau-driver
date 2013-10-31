@@ -119,8 +119,7 @@ struct vdpau_driver_data {
     int                         preinit;
     int                        *vlc_active;
     object_surface_p            last_vdp_surface;
-    int                         screen_width;
-    int                         screen_height;
+    VdpRect              video_rect;
 };
 
 // Set display type

@@ -317,11 +317,6 @@ vdpau_DestroyImage(
         //fprintf(stderr,"Shutdown detected. Rendering last decoded video frame to vid_surface\n");
 
         if (driver_data->last_vdp_surface!=0) {
-            VdpRect dest;
-            dest.x0=0;
-            dest.x1=driver_data->screen_width;
-            dest.y0=0;
-            dest.y1=driver_data->screen_height;
             VdpStatus vdp_status = video_mixer_render(
                 driver_data,
                 driver_data->last_vdp_surface->video_mixer,
@@ -329,7 +324,7 @@ vdpau_DestroyImage(
                 VDP_INVALID_HANDLE,
                 driver_data->vid_surface,
                 NULL,
-                &dest,
+                &driver_data->video_rect,
 		1	
                 );
         }
