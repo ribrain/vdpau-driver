@@ -323,8 +323,8 @@ vdpau_DestroyImage(
                 driver_data->last_vdp_surface,
                 VDP_INVALID_HANDLE,
                 driver_data->vid_surface,
-                NULL,
-                &driver_data->video_rect,
+                &driver_data->video_src_rect,
+                &driver_data->video_dst_rect,
 		1	
                 );
         }
