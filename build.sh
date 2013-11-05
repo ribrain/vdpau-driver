@@ -18,7 +18,7 @@ vdpau_release=`basename $vdpau_tarball | sed s/\.tar\.gz//`
 tar -f $vdpau_tarball -C prefix/usr/include/vdpau --wildcards -x "$vdpau_release/include/*" --strip-components=2
 tar -f $vdpau_tarball -C prefix/usr/lib --wildcards -x "$vdpau_release/bin/*.so*" --strip-components=2
 cd prefix/usr/lib
-ln -s libvdpau.so.* libvdpau.so
+ln -sf libvdpau.so.1.0.0 libvdpau.so
 
 cd $BUILDDIR
 # reconfigure using host version. host-autotools break because of hard-coded paths
