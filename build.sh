@@ -11,6 +11,9 @@ source build.env
 mkdir -p $PREFIX/usr/include/vdpau
 mkdir -p $PREFIX/usr/lib
 
+git submodule init
+git submodule update
+
 echo "Copying VDPAU headers and libs from viatech-drivers"
 [ -x `which basename` ] || { echo "basename command not found"; exit 1; }
 vdpau_tarball=`ls platform/viatech-drivers/VDPAU_*`
