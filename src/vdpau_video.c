@@ -340,6 +340,7 @@ vdpau_DestroySurfaces(
         obj_surface->output_surfaces_count_max = 0;
 
         if (obj_surface->video_mixer) {
+            driver_data->output_surfaces_ready=0;
             video_mixer_unref(driver_data, obj_surface->video_mixer);
             obj_surface->video_mixer = NULL;
         }
@@ -436,6 +437,7 @@ vdpau_CreateSurfaces(
         vdp_surface                             = VDP_INVALID_HANDLE;
 
         object_mixer_p obj_mixer;
+        driver_data->output_surfaces_ready = 0;
         obj_mixer = video_mixer_create_cached(driver_data, obj_surface);
         if (!obj_mixer) {
             va_status = VA_STATUS_ERROR_ALLOCATION_FAILED;

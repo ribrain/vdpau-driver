@@ -242,8 +242,9 @@ video_mixer_unref(
     object_mixer_p       obj_mixer
 )
 {
-    if (obj_mixer && --obj_mixer->refcount == 0)
+    if (obj_mixer && --obj_mixer->refcount == 0) {
         video_mixer_destroy(driver_data, obj_mixer);
+    }
 }
 
 static VdpStatus

@@ -448,6 +448,7 @@ ensure_bounds(VdpRect *rect, unsigned int width, unsigned int height)
     rect->y1 = MIN(rect->y1, height);
 }
 
+static int fcount=0;
 // Render surface to the VDPAU output surface
 VAStatus
 render_surface(
@@ -487,7 +488,6 @@ render_surface(
         if (obj_output->vdp_output_surfaces_dirty[background_surface])
             vdp_background = obj_output->vdp_output_surfaces[background_surface];
     }
-
     VdpStatus vdp_status;
     vdp_status = video_mixer_render(
         driver_data,
@@ -499,6 +499,7 @@ render_surface(
         &driver_data->video_dst_rect,
         flags
     );
+    driver_data->output_surfaces_ready++;
     obj_output->vdp_output_surfaces_dirty[obj_output->current_output_surface] = 1;
     return vdpau_get_VAStatus(vdp_status);
 }
@@ -648,6 +649,10 @@ flip_surface_unlocked(
     object_output_p      obj_output
 )
 {
+    if (driver_data->output_surfaces_ready < VDPAU_MAX_OUTPUT_SURFACES ) {
+        fprintf(stderr,"Not rendering, not ready\n");
+        return VA_STATUS_SUCCESS;
+    }
     VdpStatus vdp_status=0;
     if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
     if (driver_data->first_picture) {

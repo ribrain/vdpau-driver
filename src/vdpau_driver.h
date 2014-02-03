@@ -121,6 +121,7 @@ struct vdpau_driver_data {
     object_surface_p            last_vdp_surface;
     VdpRect              	video_src_rect;
     VdpRect              	video_dst_rect;
+    int 			output_surfaces_ready;
 };
 
 // Set display type
