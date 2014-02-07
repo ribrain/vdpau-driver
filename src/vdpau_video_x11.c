@@ -650,7 +650,7 @@ flip_surface_unlocked(
     object_output_p      obj_output
 )
 {
-    if (driver_data->output_surfaces_ready < VDPAU_MAX_OUTPUT_SURFACES ) {
+    if (driver_data->output_surfaces_ready == 0 ) {
         fprintf(stderr,"Not rendering, not ready\n");
         return VA_STATUS_SUCCESS;
     }

@@ -319,6 +319,7 @@ vdpau_DestroySurfaces(
 {
     VDPAU_DRIVER_DATA_INIT;
 
+    driver_data->output_surfaces_ready=0;
     int i, j, n;
     for (i = num_surfaces - 1; i >= 0; i--) {
         object_surface_p obj_surface = VDPAU_SURFACE(surface_list[i]);
@@ -340,7 +341,6 @@ vdpau_DestroySurfaces(
         obj_surface->output_surfaces_count_max = 0;
 
         if (obj_surface->video_mixer) {
-            driver_data->output_surfaces_ready=0;
             video_mixer_unref(driver_data, obj_surface->video_mixer);
             obj_surface->video_mixer = NULL;
         }
