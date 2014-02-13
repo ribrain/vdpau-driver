@@ -313,16 +313,11 @@ vdpau_DestroyImage(
 {
     VDPAU_DRIVER_DATA_INIT;
     if (driver_data->last_vdp_surface!=NULL) {
-       
-        if (driver_data->last_vdp_surface!=0) {
-            char* buf=getenv("VDP_VID_RECT");
-            if (buf!=NULL) {
-                  VdpRect *vid_rect;
-                  sscanf(buf,"%u",&vid_rect);
-                  vid_rect->x0 = driver_data->video_dst_rect.x0;
-                  vid_rect->y0 = driver_data->video_dst_rect.y0;
-                  vid_rect->x1 = driver_data->video_dst_rect.x1;
-                  vid_rect->y1 = driver_data->video_dst_rect.y1;
+            if (driver_data->vidrect != NULL){
+                  driver_data->vidrect->x0 = driver_data->video_dst_rect.x0;
+                  driver_data->vidrect->y0 = driver_data->video_dst_rect.y0;
+                  driver_data->vidrect->x1 = driver_data->video_dst_rect.x1;
+                  driver_data->vidrect->y1 = driver_data->video_dst_rect.y1;
             }
             VdpStatus vdp_status = video_mixer_render(
                 driver_data,
@@ -334,7 +329,6 @@ vdpau_DestroyImage(
                 &driver_data->video_dst_rect,
 		1	
                 );
-        }
         driver_data->last_vdp_surface=NULL;
     }
 

@@ -227,6 +227,10 @@ vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
         if (visurf_str!=NULL) {
             sscanf(visurf_str,"%u",&(driver_data->vid_surface));
         }
+        char* vidrect_str=getenv("VDP_VID_RECT");
+        if (vidrect_str!=NULL) {
+            sscanf(vidrect_str,"%u",&(driver_data->vidrect));
+        }
         driver_data->preinit=1;
         driver_data->first_picture=1;
     } else {
