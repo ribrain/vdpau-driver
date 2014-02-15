@@ -197,7 +197,7 @@ ensure_decoder_with_max_refs(
             obj_context->vdp_profile,
             obj_context->picture_width,
             obj_context->picture_height,
-            max_ref_frames,
+            4, // override max ref frames.
             &obj_context->vdp_decoder
         );
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpDecoderCreate()"))
