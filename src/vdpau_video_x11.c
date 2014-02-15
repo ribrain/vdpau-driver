@@ -37,7 +37,12 @@
 
 #define DEBUG 1
 #include "debug.h"
-
+#include <time.h>
+int64_t currenttimemillis() {
+   struct timespec ts;
+   clock_gettime(CLOCK_MONOTONIC, &ts);
+   return ((int64_t)ts.tv_sec * 1000 + (int64_t)ts.tv_nsec/1000000);
+}
 // Handle VT display preemption
 static int handle_display_preemption(vdpau_driver_data_t *driver_data)
 {
@@ -276,12 +281,13 @@ output_surface_create(
         }
 
         /* {0, 0, 0, 0} make transparent */
-        VdpColor vdp_bg = {0.01, 0.02, 0.03, 0};
+/*        VdpColor vdp_bg = {0.01, 0.02, 0.03, 0};
         vdp_status = vdpau_presentation_queue_set_background_color(
                     driver_data,
                     obj_output->vdp_flip_queue,
                     &vdp_bg
         ); 
+*/
         if (!VDPAU_CHECK_STATUS(vdp_status, "obj_output->vdp_flip_queue()")) {
             /* NOTE: this is not a fatal error, so continue anyway */
         }
@@ -666,7 +672,7 @@ flip_surface_unlocked(
         pthread_mutex_unlock(driver_data->ui_mutex);
         return VA_STATUS_ERROR_OPERATION_FAILED;
     }
-
+    int64_t t1,t2,t3=0;
     if (driver_data->ui_surface!=0) {
         VdpRect destination_rect;
         destination_rect.x0 = 0;
@@ -682,11 +688,12 @@ flip_surface_unlocked(
         VdpOutputSurfaceRenderBlendState blend_state;
         blend_state.struct_version                 = VDP_OUTPUT_SURFACE_RENDER_BLEND_STATE_VERSION;
         blend_state.blend_factor_source_color      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
-        blend_state.blend_factor_source_alpha      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
+        blend_state.blend_factor_source_alpha      = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ZERO;
         blend_state.blend_factor_destination_color = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_SRC_ALPHA;
+        blend_state.blend_factor_destination_alpha = VDP_OUTPUT_SURFACE_RENDER_BLEND_FACTOR_ONE;
         blend_state.blend_equation_color           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
         blend_state.blend_equation_alpha           = VDP_OUTPUT_SURFACE_RENDER_BLEND_EQUATION_ADD;
+        t1=currenttimemillis();
         vdp_status = vdpau_output_surface_render_bitmap_surface(driver_data,
                                                    obj_output->vdp_output_surfaces[obj_output->current_output_surface],
                                                    &destination_rect,
@@ -695,6 +702,8 @@ flip_surface_unlocked(
                                                    NULL,
                                                    &blend_state,
                                                    VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
+        t2=currenttimemillis();
+
         if (driver_data->ui_mutex) {
                 pthread_mutex_unlock(driver_data->ui_mutex);
         }
@@ -713,6 +722,12 @@ flip_surface_unlocked(
         obj_output->height,
         0 /*driver_data->pts */
     );
+    t3=currenttimemillis();
+
+    if (t3-t2==0) {
+          driver_data->ui_surface=0;
+          fprintf(stderr,"RBI Render error: %lld Bitmap render: %lldms Presentation display %lldms Total %lldms Will skip ui blend\n",t3%100000, t2-t1,t3-t2,t3-t1);
+    }
     if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueDisplay()"))
         return vdpau_get_VAStatus(vdp_status);
 
@@ -780,11 +795,10 @@ put_surface_unlocked(
         );
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueBlockUntilSurfaceIdle()"))
             return vdpau_get_VAStatus(vdp_status);
-        if (!VDPAU_CHECK_STATUS(vdp_status, "VdpPresentationQueueBlockUntilSurfaceIdle()"))
-            return vdpau_get_VAStatus(vdp_status);
     }
 
     /* Render the video surface to the output surface */
+    int64_t t1=currenttimemillis();
     va_status = render_surface(
         driver_data,
         obj_surface,
@@ -793,6 +807,7 @@ put_surface_unlocked(
         target_rect,
         flags
     );
+    int64_t t2=currenttimemillis();
     if (va_status != VA_STATUS_SUCCESS)
         return va_status;
 
