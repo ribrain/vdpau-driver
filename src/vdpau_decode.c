@@ -1295,7 +1295,7 @@ vdpau_EndPicture(
             obj_context->vdp_bitstream_buffers_count,
             obj_context->vdp_bitstream_buffers
         );
-        if (!vdp_status) {
+        if (vdp_status==VDP_STATUS_OK) {
              driver_data->last_vdp_surface=obj_surface;
         }
     }
