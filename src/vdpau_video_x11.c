@@ -714,6 +714,15 @@ flip_surface_unlocked(
             return vdp_status;
         }
     }
+    if (obj_output->queued_surfaces == 1) {
+       VdpTime dummy_time=1;
+        vdp_status = vdpau_presentation_queue_block_until_surface_idle(
+            driver_data,
+            obj_output->vdp_flip_queue,
+            obj_output->vdp_output_surfaces[1-obj_output->current_output_surface],
+            &dummy_time
+        ); 
+    }
     vdp_status = vdpau_presentation_queue_display(
         driver_data,
         obj_output->vdp_flip_queue,
