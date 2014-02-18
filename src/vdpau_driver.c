@@ -222,6 +222,10 @@ vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
             sscanf(uisurf_str,"%u",&(driver_data->ui_surface));
             char* uimutex_str = getenv("VDP_UI_MUTEX");
             sscanf(uimutex_str,"%u",&(driver_data->ui_mutex));
+            char* decodemutex_str = getenv("VDP_DECODE_MUTEX");
+            sscanf(decodemutex_str,"%u",&(driver_data->decoder_mutex));
+        } else {
+            driver_data->decoder_mutex=NULL;
         }
         char* visurf_str = getenv("VDP_VID_SURFACE");
         if (visurf_str!=NULL) {

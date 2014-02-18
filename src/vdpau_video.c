@@ -480,7 +480,9 @@ VAStatus vdpau_DestroyContext(VADriverContextP ctx, VAContextID context)
     }
 
     if (obj_context->vdp_decoder != VDP_INVALID_HANDLE) {
+        if (driver_data->decoder_mutex) pthread_mutex_lock(driver_data->decoder_mutex);
         vdpau_decoder_destroy(driver_data, obj_context->vdp_decoder);
+        if (driver_data->decoder_mutex) pthread_mutex_unlock(driver_data->decoder_mutex);
         obj_context->vdp_decoder = VDP_INVALID_HANDLE;
     }
 

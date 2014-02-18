@@ -187,10 +187,12 @@ ensure_decoder_with_max_refs(
         obj_context->max_ref_frames = max_ref_frames;
 
         if (obj_context->vdp_decoder != VDP_INVALID_HANDLE) {
+            if (driver_data->decoder_mutex) pthread_mutex_lock(driver_data->decoder_mutex);
             vdpau_decoder_destroy(driver_data, obj_context->vdp_decoder);
+            if (driver_data->decoder_mutex) pthread_mutex_unlock(driver_data->decoder_mutex);
             obj_context->vdp_decoder = VDP_INVALID_HANDLE;
         }
-
+        if (driver_data->decoder_mutex) pthread_mutex_lock(driver_data->decoder_mutex);
         vdp_status = vdpau_decoder_create(
             driver_data,
             driver_data->vdp_device,
@@ -200,6 +202,7 @@ ensure_decoder_with_max_refs(
             4, // override max ref frames.
             &obj_context->vdp_decoder
         );
+        if (driver_data->decoder_mutex) pthread_mutex_unlock(driver_data->decoder_mutex);
         if (!VDPAU_CHECK_STATUS(vdp_status, "VdpDecoderCreate()"))
             return vdp_status;
     }
@@ -1287,6 +1290,7 @@ vdpau_EndPicture(
     if (vdp_status == VDP_STATUS_OK) {
         void *test = &obj_context->vdp_picture_info;
         VdpPictureInfo *info = (VdpPictureInfo*) test;
+        if (driver_data->decoder_mutex) pthread_mutex_lock(driver_data->decoder_mutex);
         vdp_status = vdpau_decoder_render(
             driver_data,
             obj_context->vdp_decoder,
@@ -1295,6 +1299,7 @@ vdpau_EndPicture(
             obj_context->vdp_bitstream_buffers_count,
             obj_context->vdp_bitstream_buffers
         );
+        if (driver_data->decoder_mutex) pthread_mutex_unlock(driver_data->decoder_mutex);
         if (vdp_status==VDP_STATUS_OK) {
              driver_data->last_vdp_surface=obj_surface;
         }
