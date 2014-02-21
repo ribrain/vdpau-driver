@@ -51,7 +51,6 @@
         if (!(expr)) {                                                  \
             vdpau_error_message("Assertion failed in file %s at line %d\n", \
                                 __FILE__, __LINE__);                    \
-            abort();                                                    \
         }                                                               \
 } while (0)
 #endif

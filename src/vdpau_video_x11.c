@@ -49,7 +49,6 @@ static int handle_display_preemption(vdpau_driver_data_t *driver_data)
     if (!driver_data->is_preempted)
         return 0;
     driver_data->is_preempted = 0;
-    abort();
 
     /* FIXME: cleanup current driver_data context and all
      * associated memory (eg: vaTerminate()) followed by
