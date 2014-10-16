@@ -220,8 +220,6 @@ vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
         char* uisurf_str = getenv("VDP_UI_SURFACE");
         if (uisurf_str!=NULL) {
             sscanf(uisurf_str,"%u",&(driver_data->ui_surface));
-            char* uimutex_str = getenv("VDP_UI_MUTEX");
-            sscanf(uimutex_str,"%u",&(driver_data->ui_mutex));
             char* decodemutex_str = getenv("VDP_DECODE_MUTEX");
             sscanf(decodemutex_str,"%u",&(driver_data->decoder_mutex));
         } else {
@@ -250,7 +248,6 @@ vdpau_common_Initialize(vdpau_driver_data_t *driver_data)
         driver_data->preinit=0;
         driver_data->ui_surface=0;
     } 
-    driver_data->ui_mutex=NULL;
     if (vdpau_gate_init(driver_data) < 0)
         return VA_STATUS_ERROR_UNKNOWN;
 

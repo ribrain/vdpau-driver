@@ -114,7 +114,6 @@ struct vdpau_driver_data {
 
     VdpOutputSurface            ui_surface;
     VdpOutputSurface            vid_surface;
-    pthread_mutex_t            *ui_mutex;
     pthread_mutex_t            *decoder_mutex;
     uint32_t                    first_picture;
     int                         preinit;

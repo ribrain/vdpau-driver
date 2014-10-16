@@ -303,7 +303,6 @@ output_surface_destroy(
 {
     if (!obj_output)
         return;
-    if (driver_data->ui_mutex) pthread_mutex_lock(driver_data->ui_mutex);
     if (driver_data->vlc_active!=NULL) {
         *(driver_data->vlc_active) = 0;
         driver_data->first_picture = 1; // handle video pause after aspect ratio change which causes surface destroy.
@@ -334,7 +333,6 @@ output_surface_destroy(
         }
     }
 
-    if (driver_data->ui_mutex) pthread_mutex_unlock(driver_data->ui_mutex);
     
     pthread_mutex_destroy(&obj_output->vdp_output_surfaces_lock);
     object_heap_free(&driver_data->output_heap, (object_base_p)obj_output);
@@ -660,15 +658,11 @@ flip_surface_unlocked(
         return VA_STATUS_SUCCESS;
     }
     VdpStatus vdp_status=0;
-    if (driver_data->ui_mutex) {
-          pthread_mutex_lock(driver_data->ui_mutex);
-    }
     if (driver_data->first_picture) {
         driver_data->first_picture = 0;
         if (driver_data->vlc_active!=NULL) *(driver_data->vlc_active) = 1;
     }
     if (handle_display_preemption(driver_data) < 0) {
-        pthread_mutex_unlock(driver_data->ui_mutex);
         return VA_STATUS_ERROR_OPERATION_FAILED;
     }
     int64_t t1,t2,t3=0;
@@ -703,9 +697,6 @@ flip_surface_unlocked(
                                                    VDP_OUTPUT_SURFACE_RENDER_ROTATE_0);
         t2=currenttimemillis();
 
-        if (driver_data->ui_mutex) {
-                pthread_mutex_unlock(driver_data->ui_mutex);
-        }
 
         if (vdp_status) {
             vdpau_error_message("Failed to render bitmap on output. Error: %s\n",
